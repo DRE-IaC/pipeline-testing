@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: us-east-1  # Update with your AWS region
-  TF_VERSION: 1.5.0      # Update with your Terraform version
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.5.0
 
 jobs:
   terraform:
-    name: Terraform 
+    name: Terraform
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -24,19 +24,13 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v3
       with:
-        role-to-assume: arn:aws:iam::344565808703:role/controlplane
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
         aws-region: ${{ env.AWS_REGION }}
         
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: ${{ env.TF_VERSION }}
-    
-    - name: Check AWS identity
-      run: |
-        aws sts get-caller-identity
-        echo "Repository: ${{ github.repository }}"
-        echo "Ref: ${{ github.ref }}"
         
     - name: Terraform Init
       run: |
