@@ -11,7 +11,7 @@ env:
 
 jobs:
   terraform:
-    name: Terraform
+    name: Terraform 
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -24,20 +24,27 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v3
       with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        role-to-assume: arn:aws:iam::344565808703:role/controlplane
         aws-region: ${{ env.AWS_REGION }}
         
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Check AWS identity
+      run: |
+        aws sts get-caller-identity
+        echo "Repository: ${{ github.repository }}"
+        echo "Ref: ${{ github.ref }}"
         
     - name: Terraform Init
       run: |
         terraform init \
           -backend-config="bucket=use2-iac-controlplane-tf-states-snarrabelly" \
           -backend-config="key=env:/primary/terraform.tfstate" \
-          -backend-config="region=${{ env.AWS_REGION }}"
+          -backend-config="region=${{ env.AWS_REGION }}" \
+          -backend-config="dynamodb_table=use2-iac-controlplane-tf-state-lock"
       
     - name: Terraform Format
       run: terraform fmt -check
@@ -46,35 +53,9 @@ jobs:
       run: terraform validate
       
     - name: Terraform Plan
-      if: github.event_name == 'pull_request'
       id: plan
       run: terraform plan -no-color
       
-    - name: Post Plan to PR
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const output = `#### Terraform Plan 📝\`${{ steps.plan.outcome }}\`
-          
-          <details><summary>Show Plan</summary>
-          
-          \`\`\`terraform
-          ${process.env.PLAN}
-          \`\`\`
-          
-          </details>`;
-          
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: output
-          })
-      env:
-        PLAN: "${{ steps.plan.outputs.stdout }}"
-      
     - name: Terraform Apply
-      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      if: github.ref == 'refs/heads/master'
       run: terraform apply -auto-approve
