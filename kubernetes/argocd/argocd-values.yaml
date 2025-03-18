@@ -1,0 +1,105 @@
+server:
+  externsions:
+    enabled: False
+configs:
+  cm:
+    kustomize.enabled: 'true'
+    kustomize.buildOptions: --enable-alpha-plugins --enable-exec
+    jsonnet.enabled: 'false'
+    helm.enabled: 'false'
+    ksonnet.enabled: 'false'
+    application.resourceTrackingMethod: annotation
+    exec.enabled: 'true'
+    exec.shells: 'bash,sh'
+  params:
+    reposerver.parallelism.limit: 0
+    reposerver.plugin.tar.exclusions: '.git/*;/applications/*'
+    reposerver.allow.oob.symlinks: 'true'
+    applicationsetcontroller.enable.new.git.file.globbing: 'true'
+  cmp:
+    create: True
+    plugins:
+      kustomize-plugin:
+        init:
+          command: [sh, -c, echo "Initializing..."]
+        discover:
+          find:
+            command: [sh, -c, echo $PWD]
+        generate:
+          command: [sh, -c, kustomize build . --enable-alpha-plugins --enable-exec]
+        preserveFileMode: true
+repoServer:
+  clusterRoleRules:
+    enabled: True
+    rules:
+      - verbs:
+          - get
+        apiGroups:
+          - ''
+        resources:
+          - configmaps
+        resourceNames:
+          - live-aws-percipio-config
+  env:
+    - name: PATH
+      value: '/custom-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+  extraContainers:
+    - name: kustomize-plugin
+      command: [/var/run/argocd/argocd-cmp-server]
+      image: quay.io/argoproj/argocd:latest
+      env:
+        - name: PATH
+          value: '/custom-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+      volumeMounts:
+        - name: var-files
+          mountPath: /var/run/argocd
+        - name: plugins
+          mountPath: /home/argocd/cmp-server/plugins
+        - name: argocd-cmp-cm
+          mountPath: /home/argocd/cmp-server/config/plugin.yaml
+          subPath: kustomize-plugin.yaml
+        - name: id-rsa
+          mountPath: /home/argocd/.ssh/id_rsa
+          subPath: sshPrivateKey
+        - name: ssh-known-hosts
+          mountPath: /home/argocd/.ssh/known_hosts
+          subPath: ssh_known_hosts
+        - name: cmp-tmp
+          mountPath: /tmp
+        - name: download-tools
+          mountPath: /scripts
+        - name: custom-tools
+          mountPath: /custom-tools
+  initContainers:
+    - name: download-tools
+      image: alpine:latest
+      command: [/scripts/download-tools.sh]
+      volumeMounts:
+        - name: download-tools
+          mountPath: /scripts
+        - mountPath: /custom-tools
+          name: custom-tools
+  volumeMounts:
+    - mountPath: /custom-tools
+      name: custom-tools
+  volumes:
+    - name: argocd-cmp-cm
+      configMap:
+        name: argocd-cmp-cm
+    - emptyDir: {}
+      name: cmp-tmp
+    - name: id-rsa
+      secret:
+        secretName: github-credentials
+        defaultMode: 0444
+        optional: true
+        namespace: argocd
+    - name: download-tools
+      configMap:
+        name: download-tools
+        defaultMode: 448
+    - name: custom-tools
+      emptyDir: {}

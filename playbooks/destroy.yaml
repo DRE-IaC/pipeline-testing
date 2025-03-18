@@ -1,0 +1,60 @@
+---
+- name: Destroy infrastructure code deployment
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+
+  - name: Clean last destroy log
+    shell: rm -rf ./tf_logs/last_{{ env }}_destroy.log;
+    args:
+      chdir: ../
+    register: clean_destroy
+    failed_when: >
+      (clean_destroy.stderr != '') or
+      (clean_destroy.rc != 0)
+
+  - name: "Display output: Clean last destroy log"
+    debug:
+      msg: "{{ clean_destroy.stdout }}"
+    when: clean_destroy.stdout != ''
+
+  - name: "Display stderr: Clean last destroy log"
+    debug:
+      msg: "{{ clean_destroy.stderr }}"
+    when: clean_destroy.stderr != ''
+
+  - ansible.legacy.import_tasks: source_config.yaml
+  - ansible.legacy.import_tasks: select_workspace.yaml
+  - ansible.legacy.import_tasks: copy_tf_files.yaml
+  - ansible.legacy.import_tasks: destroy_plan.yaml
+
+  - name: "Ask for confirmation"
+    pause:
+      prompt: "Do you want to proceed and destroy the configuration of the {{ env }} environment (yes/no)?"
+    register: terraform_destroy_confirmation
+    when: >
+      (terraform_destroy_plan.stderr == '') and
+      (terraform_destroy_plan.rc == 0)
+
+  - name: "Terraform destroy"
+    shell: terraform destroy -auto-approve | tee ./tf_logs/last_{{ env }}_destroy.log;
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_destroy.log
+    when: terraform_destroy_confirmation.user_input | lower == "yes" or terraform_destroy_confirmation.user_input | lower == "y" | bool
+    register: terraform_destroy
+    failed_when: >
+      (terraform_destroy.stderr != '') or
+      (terraform_destroy.rc != 0)
+
+  - name: "Display output: Terraform destroy"
+    debug:
+      msg: "{{ terraform_destroy.stdout }}"
+    when: terraform_destroy_confirmation.user_input | lower == "yes" or terraform_destroy_confirmation.user_input | lower == "y" | bool
+
+  - name: "Display stderr: Terraform destroy"
+    debug:
+      msg: "{{ terraform_destroy.stderr }}"
+    when: terraform_destroy_confirmation.user_input | lower == "yes" or terraform_destroy_confirmation.user_input | lower == "y" | bool

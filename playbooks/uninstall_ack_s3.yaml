@@ -1,0 +1,50 @@
+---
+- name: "Uninstall ACK S3"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Uninstall ACK S3"
+    shell: helm uninstall -n ack-system ack-s3-controller
+    args:
+      chdir: ../
+    when: eks_update_config.rc == 0
+    register: helm_uninstall_ack_s3
+    failed_when: >
+      (helm_uninstall_ack_s3.stderr != '') or
+      (helm_uninstall_ack_s3.rc != 0)
+
+  - name: "Display output: Uninstall ACK S3"
+    debug:
+      msg: "{{ helm_uninstall_ack_s3.stdout }}"
+    when: helm_uninstall_ack_s3.stdout != ''
+
+  - name: "Display stderr: Uninstall ACK S3"
+    debug:
+      msg: "{{ helm_uninstall_ack_s3.stderr }}"
+    when: helm_uninstall_ack_s3.stderr != ''
+
+  - name: "Delete ACK S3 CRDs"
+    shell: kubectl delete -f ./kubernetes/ack/s3-chart-v0.1.5/crds
+    args:
+      chdir: ../
+    when: >
+      (helm_uninstall_ack_s3.stderr == '') and
+      (helm_uninstall_ack_s3.rc == 0)
+    register: delete_ack_s3_crds
+    failed_when: >
+      (delete_ack_s3_crds.stderr != '') or
+      (delete_ack_s3_crds.rc != 0)
+
+  - name: "Display output: Delete ACK S3 CRDs"
+    debug:
+      msg: "{{ delete_ack_s3_crds.stdout }}"
+    when: delete_ack_s3_crds.stdout != ''
+
+  - name: "Display stderr: Delete ACK S3 CRDs"
+    debug:
+      msg: "{{ delete_ack_s3_crds.stderr }}"
+    when: delete_ack_s3_crds.stderr != ''

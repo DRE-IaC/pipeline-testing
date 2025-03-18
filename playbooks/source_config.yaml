@@ -1,0 +1,20 @@
+---
+- name: Source terraform config
+  shell: source ./{{ terraform_config }};
+  args:
+    chdir: ../
+    executable: /bin/bash
+  register: source_config
+  failed_when: >
+    (source_config.stderr != '') or
+    (source_config.rc != 0)
+
+- name: "Display output: Source terraform config"
+  debug:
+    msg: "{{ source_config.stdout }}"
+  when: source_config.stdout != ''
+
+- name: "Display stderr: Source terraform config"
+  debug:
+    msg: "{{ source_config.stderr }}"
+  when: source_config.stderr != ''

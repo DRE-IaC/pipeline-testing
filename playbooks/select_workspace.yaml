@@ -1,0 +1,36 @@
+---
+- name: Create terraform workspace
+  shell: terraform workspace new {{ env }};
+  args:
+    chdir: ../
+  register: create_workspace
+  failed_when: false
+
+- name: "Display output: Create terraform workspace"
+  debug:
+    msg: "{{ create_workspace.stdout }}"
+  when: create_workspace.stdout != ''
+
+- name: "Display stderr: Create terraform workspace"
+  debug:
+    msg: "{{ create_workspace.stderr }}"
+  when: create_workspace.stderr != ''
+
+- name: Select terraform workspace
+  shell: terraform workspace select {{ env }};
+  args:
+    chdir: ../
+  register: select_workspace
+  failed_when: >
+    (select_workspace.stderr != '') or
+    (select_workspace.rc != 0)
+
+- name: "Display output: Select terraform workspace"
+  debug:
+    msg: "{{ select_workspace.stdout }}"
+  when: select_workspace.stdout != ''
+
+- name: "Display stderr: Select terraform workspace"
+  debug:
+    msg: "{{ select_workspace.stderr }}"
+  when: select_workspace.stderr != ''

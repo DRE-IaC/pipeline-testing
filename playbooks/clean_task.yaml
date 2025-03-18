@@ -1,0 +1,19 @@
+---
+- name: Clean terraform files
+  shell: rm -rf ./*.env.tf; rm -rf ./*.env.tfvars; rm -rf ./.terraform; rm -rf ./terraform.tfstate.d; rm -rf ./.terraform.lock.hcl;
+  args:
+    chdir: ../
+  register: clean_tf_files
+  failed_when: >
+    (clean_tf_files.stderr != '') or
+    (clean_tf_files.rc != 0)
+
+- name: "Display output: Clean terraform files"
+  debug:
+    msg: "{{ clean_tf_files.stdout }}"
+  when: clean_tf_files.stdout != ''
+
+- name: "Display stderr: Clean terraform files"
+  debug:
+    msg: "{{ clean_tf_files.stderr }}"
+  when: clean_tf_files.stderr != ''

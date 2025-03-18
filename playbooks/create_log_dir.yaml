@@ -1,0 +1,6 @@
+---
+- name: "Create log directory"
+  shell: mkdir -p tf_logs
+  args:
+    chdir: ../
+  register: create_tf_logs_directory

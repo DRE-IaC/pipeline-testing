@@ -1,0 +1,11 @@
+---
+- name: Create an execution plan for preview
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+  - ansible.legacy.import_tasks: source_config.yaml
+  - ansible.legacy.import_tasks: select_workspace.yaml
+  - ansible.legacy.import_tasks: copy_tf_files.yaml
+  - ansible.legacy.import_tasks: plan_task.yaml

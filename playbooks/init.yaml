@@ -1,0 +1,51 @@
+---
+- name: Initialize infrastructure code deployment
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+  - ansible.legacy.import_tasks: clean_task.yaml
+
+  - name: Clean init logs
+    shell: rm -rf ./tf_logs/last_{{ env }}_init.log*
+    args:
+      chdir: ../
+    register: clean_init
+    failed_when: >
+      (clean_init.stderr != '') or
+      (clean_init.rc != 0)
+
+  - name: "Display output: Clean init logs"
+    debug:
+      msg: "{{ clean_init.stdout }}"
+    when: clean_init.stdout != ''
+
+  - name: "Display stderr: Clean init logs"
+    debug:
+      msg: "{{ clean_init.stderr }}"
+    when: clean_init.stderr != ''
+
+  - ansible.legacy.import_tasks: source_config.yaml
+  - ansible.legacy.import_tasks: select_workspace.yaml
+  - ansible.legacy.import_tasks: copy_tf_files.yaml
+
+  - name: Terraform init
+    shell: terraform init -var-file=./env/{{ env }}/vars -backend-config ./backend.env.tfvars | tee ./tf_logs/last_{{ env }}_init.log;
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_init.log
+    register: terraform_init
+    failed_when: >
+      (terraform_init.stderr != '') or
+      (terraform_init.rc != 0)
+
+  - name: "Display output: Terraform init"
+    debug:
+      msg: "{{ terraform_init.stdout }}"
+    when: terraform_init.stdout != ''
+
+  - name: "Display stderr: Terraform init"
+    debug:
+      msg: "{{ terraform_init.stderr }}"
+    when: terraform_init.stderr != ''

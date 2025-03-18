@@ -1,0 +1,42 @@
+---
+- name: Clean last plan log/files
+  shell: rm -rf ./tf_logs/last_{{ env }}_plan.log last_{{ env }}_plan_to_apply;
+  args:
+    chdir: ../
+  register: clean_plan
+  failed_when: >
+    (clean_plan.stderr != '') or
+    (clean_plan.rc != 0)
+
+- name: "Display output: Clean last plan log/files"
+  debug:
+    msg: "{{ clean_plan.stdout }}"
+  when: clean_plan.stdout != ''
+
+- name: "Display stderr: Clean last plan log/files"
+  debug:
+    msg: "{{ clean_plan.stderr }}"
+  when: clean_plan.stderr != ''
+
+- name: "Terraform init upgrade: pick up new providers added in code"
+  shell: terraform init -upgrade 
+
+- name: Terraform plan
+  shell: terraform plan -var-file=./env/{{ env }}/vars -out=last_{{ env }}_plan_to_apply | tee ./tf_logs/last_{{ env }}_plan.log;
+  args:
+    chdir: ../
+    creates: ./tf_logs/last_{{ env }}_plan.log
+  register: terraform_plan
+  failed_when: >
+    (terraform_plan.stderr != '') or
+    (terraform_plan.rc != 0)
+
+- name: "Display output: Terraform plan"
+  debug:
+    msg: "{{ terraform_plan.stdout }}"
+  when: terraform_plan.stdout != ''
+
+- name: "Display stderr: Terraform plan"
+  debug:
+    msg: "{{ terraform_plan.stderr }}"
+  when: terraform_plan.stderr != ''

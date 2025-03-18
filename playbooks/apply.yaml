@@ -1,0 +1,60 @@
+---
+- name: Start infrastructure code deployment
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+
+  - name: Clean last apply log/files
+    shell: rm -rf ./tf_logs/last_{{ env }}_apply.log;
+    args:
+      chdir: ../
+    register: clean_apply
+    failed_when: >
+      (clean_apply.stderr != '') or
+      (clean_apply.rc != 0)
+
+  - name: "Display output: Clean last apply log/files"
+    debug:
+      msg: "{{ clean_apply.stdout }}"
+    when: clean_apply.stdout != ''
+
+  - name: "Display stderr: Clean last apply log/files"
+    debug:
+      msg: "{{ clean_apply.stderr }}"
+    when: clean_apply.stderr != ''
+
+  - ansible.legacy.import_tasks: source_config.yaml
+  - ansible.legacy.import_tasks: select_workspace.yaml
+  - ansible.legacy.import_tasks: copy_tf_files.yaml
+  - ansible.legacy.import_tasks: plan_task.yaml
+
+  - name: "Ask for confirmation"
+    pause:
+      prompt: "Do you want to proceed and apply this configuration to the {{ env }} environment (yes/no)?"
+    register: terraform_apply_confirmation
+    when: >
+      (terraform_plan.stderr == '') and
+      (terraform_plan.rc == 0)
+
+  - name: "Terraform apply"
+    shell: terraform apply "last_{{ env }}_plan_to_apply" | tee ./tf_logs/last_{{ env }}_apply.log;
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_apply.log
+    when: terraform_apply_confirmation.user_input | lower == "yes" or terraform_apply_confirmation.user_input | lower == "y" | bool
+    register: terraform_apply
+    failed_when: >
+      (terraform_apply.stderr != '') or
+      (terraform_apply.rc != 0)
+
+  - name: "Display output: Terraform apply"
+    debug:
+      msg: "{{ terraform_apply.stdout }}"
+    when: terraform_apply_confirmation.user_input | lower == "yes" or terraform_apply_confirmation.user_input | lower == "y" | bool
+
+  - name: "Display stderr: Terraform apply"
+    debug:
+      msg: "{{ terraform_apply.stderr }}"
+    when: terraform_apply_confirmation.user_input | lower == "yes" or terraform_apply_confirmation.user_input | lower == "y" | bool

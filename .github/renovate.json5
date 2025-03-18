@@ -1,0 +1,3 @@
+{
+    extends: ['github>DRE-IaC/renovate-config']
+}

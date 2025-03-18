@@ -1,0 +1,84 @@
+---
+- name: "Install Nginx Ingress"
+  hosts: localhost
+
+  
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+
+  - name: "Clean Nginx Ingress installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_nginx_ingress.log ./tf_logs/last_{{ env }}_diff_nginx_ingress.log ;
+    args:
+      chdir: ../
+    register: clean_helm_install_nginx_ingress
+    failed_when: >
+      (clean_helm_install_nginx_ingress.stderr != '') or
+      (clean_helm_install_nginx_ingress.rc != 0)
+
+  - name: "Display output: Clean nginx_ingress installation logs"
+    debug:
+      msg: "{{ clean_helm_install_nginx_ingress.stdout }}"
+    when: clean_helm_install_nginx_ingress.stdout != ''
+
+  - name: "Display stderr: Clean Nginx Ingress installation logs"
+    debug:
+      msg: "{{ clean_helm_install_nginx_ingress.stderr }}"
+    when: clean_helm_install_nginx_ingress.stderr != ''
+
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - pause:
+      prompt: "Do you want to Diff Nginx Ingress (yes/no)?"
+    register: diff_nginx_ingress
+    delegate_to: localhost
+
+  - name: "Diff Nginx Ingress with Installed One"
+    shell: helm repo add nginx-stable https://helm.nginx.com/stable && helm repo update && helm diff --install  internal-ingress nginx-stable/nginx-ingress --version 0.15.1  -f ./kubernetes/kubernetes-ingress/nginx-ingress/ingress2.yaml | tee ./tf_logs/last_{{ env }}_diff_nginx_ingress.log
+    delay: 10
+    retries: 300
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_nginx_ingress.log
+    register: helm_diff_install_nginx_ingress
+    when: hostvars['localhost'].diff_nginx_ingress.user_input | bool
+
+  - name: "Display output: Install Nginx Ingress"
+    debug:
+      msg: "{{ helm_diff_install_nginx_ingress.stdout }}"
+    when: helm_diff_install_nginx_ingress.stdout != ''
+
+  - name: "Display stderr: Install Nginx Ingress"
+    debug:
+      msg: "{{ helm_diff_install_nginx_ingress.stderr }}"
+    when: helm_diff_install_nginx_ingress.stderr != ''
+
+
+  - pause:
+      prompt: "Do you want to install Nginx Ingress (yes/no)?"
+    register: install_nginx_ingress
+    delegate_to: localhost
+
+  - name: "Install Nginx Ingress"
+    shell: helm upgrade --install  internal-ingress nginx-stable/nginx-ingress --version 0.15.1  -f ./kubernetes/kubernetes-ingress/nginx-ingress/ingress2.yaml | tee ./tf_logs/last_{{ env }}_install_nginx_ingress.log
+    delay: 10
+    retries: 300
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_nginx_ingress.log
+    register: helm_install_nginx_ingress
+    when: hostvars['localhost'].install_nginx_ingress.user_input | bool
+    failed_when: >
+      (helm_install_nginx_ingress.stderr != '') or
+      (helm_install_nginx_ingress.rc != 0)
+
+  - name: "Display output: Install Nginx Ingress"
+    debug:
+      msg: "{{ helm_install_nginx_ingress.stdout }}"
+    when: helm_install_nginx_ingress.stdout != ''
+    
+  - name: "Display stderr: Install Nginx Ingress"
+    debug:
+      msg: "{{ helm_install_nginx_ingress.stderr }}"
+    when: helm_install_nginx_ingress.stderr != ''
