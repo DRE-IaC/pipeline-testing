@@ -1,0 +1,28 @@
+---
+- name: "Uninstall external dns"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Uninstall external dns"
+    shell: helm uninstall -n external-dns dre
+    args:
+      chdir: ../
+    when: eks_update_config.rc == 0
+    register: helm_uninstall_external_dns
+    failed_when: >
+      (helm_uninstall_external_dns.stderr != '') or
+      (helm_uninstall_external_dns.rc != 0)
+
+  - name: "Display output: Uninstall External Dns"
+    debug:
+      msg: "{{ helm_uninstall_external_dns.stdout }}"
+    when: helm_uninstall_external_dns.stdout != ''
+
+  - name: "Display stderr: Uninstall External Dns"
+    debug:
+      msg: "{{ helm_uninstall_external_dns.stderr }}"
+    when: helm_uninstall_external_dns.stderr != ''

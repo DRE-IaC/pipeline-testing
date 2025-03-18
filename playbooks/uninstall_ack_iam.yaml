@@ -1,0 +1,50 @@
+---
+- name: "Uninstall ACK IAM"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Uninstall ACK IAM"
+    shell: helm uninstall -n ack-system ack-iam-controller
+    args:
+      chdir: ../
+    when: eks_update_config.rc == 0
+    register: helm_uninstall_ack_iam
+    failed_when: >
+      (helm_uninstall_ack_iam.stderr != '') or
+      (helm_uninstall_ack_iam.rc != 0)
+
+  - name: "Display output: Uninstall ACK IAM"
+    debug:
+      msg: "{{ helm_uninstall_ack_iam.stdout }}"
+    when: helm_uninstall_ack_iam.stdout != ''
+
+  - name: "Display stderr: Uninstall ACK IAM"
+    debug:
+      msg: "{{ helm_uninstall_ack_iam.stderr }}"
+    when: helm_uninstall_ack_iam.stderr != ''
+
+  - name: "Delete ACK IAM CRDs"
+    shell: kubectl delete -f ./kubernetes/ack/iam-chart-v1.3.0/crds
+    args:
+      chdir: ../
+    when: >
+      (helm_uninstall_ack_iam.stderr == '') and
+      (helm_uninstall_ack_iam.rc == 0)
+    register: delete_ack_iam_crds
+    failed_when: >
+      (delete_ack_iam_crds.stderr != '') or
+      (delete_ack_iam_crds.rc != 0)
+
+  - name: "Display output: Delete ACK IAM CRDs"
+    debug:
+      msg: "{{ delete_ack_iam_crds.stdout }}"
+    when: delete_ack_iam_crds.stdout != ''
+
+  - name: "Display stderr: Delete ACK IAM CRDs"
+    debug:
+      msg: "{{ delete_ack_iam_crds.stderr }}"
+    when: delete_ack_iam_crds.stderr != ''

@@ -1,0 +1,82 @@
+---
+- name: "Install Calico"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+
+  - name: "Clean Calico installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_calico.log ./tf_logs/last_{{ env }}_diff_calico.log;
+    args:
+      chdir: ../
+    register: clean_helm_install_calico
+    failed_when: >
+      (clean_helm_install_calico.stderr != '') or
+      (clean_helm_install_calico.rc != 0)
+
+  - name: "Display output: Clean Calico installation logs"
+    debug:
+      msg: "{{ clean_helm_install_calico.stdout }}"
+    when: clean_helm_install_calico.stdout != ''
+
+  - name: "Display stderr: Clean Calico installation logs"
+    debug:
+      msg: "{{ clean_helm_install_calico.stderr }}"
+    when: clean_helm_install_calico.stderr != ''
+
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - pause:
+      prompt: "Do you want to Diff Calico (yes/no)?"
+    register: diff_calico
+    delegate_to: localhost  
+
+  - name: "Diff Calico with Installed One"
+    shell: helm diff --install  calico projectcalico/tigera-operator --version v3.22.0 -f ./kubernetes/kubernetes-calico/values.yaml | tee ./tf_logs/last_{{ env }}_diff_calico.log
+    delay: 10
+    retries: 300
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_diff_calico.log
+    register: helm_diff_install_calico
+    when: hostvars['localhost'].diff_calico.user_input | bool
+
+  - name: "Display output: Install Calico"
+    debug:
+      msg: "{{ helm_diff_install_calico.stdout }}"
+    when: helm_diff_install_calico.stdout != ''
+
+  - name: "Display stderr: Install Calico"
+    debug:
+      msg: "{{ helm_diff_install_calico.stderr }}"
+    when: helm_diff_install_calico.stderr != ''
+
+
+  - pause:
+      prompt: "Do you want to install Calico (yes/no)?"
+    register: install_calico
+    delegate_to: localhost
+
+  - name: "Install Calico"
+    shell: helm upgrade --install  calico projectcalico/tigera-operator --version v3.22.0 -f ./kubernetes/kubernetes-calico/values.yaml | tee ./tf_logs/last_{{ env }}_install_calico.log
+    delay: 10
+    retries: 300
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_calico.log
+    register: helm_install_calico
+    when: hostvars['localhost'].install_calico.user_input | bool
+    failed_when: >
+      (helm_install_calico.stderr != '') or
+      (helm_install_calico.rc != 0)
+
+  - name: "Display output: Install Calico"
+    debug:
+      msg: "{{ helm_install_calico.stdout }}"
+    when: helm_install_calico.stdout != ''
+
+  - name: "Display stderr: Install Calico"
+    debug:
+      msg: "{{ helm_install_calico.stderr }}"
+    when: helm_install_calico.stderr != ''

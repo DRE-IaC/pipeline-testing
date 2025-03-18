@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+  labels:
+    applicationSet: platform
+spec:
+  destination:
+    namespace: velero
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    path: overlays/
+    plugin:
+      env:
+        - name: CLUSTER_NAME
+          value: ${environmentname}-controlplane
+      name: kustomize-plugin
+    repoURL: git@github.com:DRE-IaC/kustomize-controlplane-velero.git
+    targetRevision: master
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ApplyOutOfSyncOnly=true
+      - CreateNamespace=true
+      - FailOnSharedResource=true
+      - PruneLast=true
+      - PrunePropagationPolicy=foreground
+      - Replace=false
+      - RespectIgnoreDifferences=true
+      - ServerSideApply=false
+      - SkipDryRunOnMissingResource=true
+      - Validate=true

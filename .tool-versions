@@ -1,0 +1,4 @@
+terraform 1.9.6
+helm 3.16.1
+awscli 2.17.20
+kubectl 1.31.1

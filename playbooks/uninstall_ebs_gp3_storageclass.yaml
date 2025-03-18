@@ -1,0 +1,29 @@
+---
+- name: "Uninstall EBS GP3 StorageClass"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Uninstall EBS GP3 StorageClass"
+    shell: helm uninstall ebs-gp3-storageclass
+    args:
+      chdir: ../
+    when: eks_update_config.rc == 0
+    register: helm_uninstall_ebs_storageclass
+    failed_when: >
+      (helm_uninstall_ebs_storageclass.stderr != '') or
+      (helm_uninstall_ebs_storageclass.rc != 0)
+
+  - name: "Display output: Uninstall EBS GP3 StorageClass"
+    debug:
+      msg: "{{ helm_uninstall_ebs_storageclass.stdout }}"
+    when: helm_uninstall_ebs_storageclass.stdout != ''
+
+  - name: "Display stderr: Uninstall EBS GP3 StorageClass"
+    debug:
+      msg: "{{ helm_uninstall_ebs_storageclass.stderr }}"
+    when: helm_uninstall_ebs_storageclass.stderr != ''
+

@@ -1,0 +1,20 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Action": "sts:AssumeRoleWithWebIdentity",
+        "Effect": "Allow",
+        "Principal": {
+          "Federated": "${oidc_provider_arn}"
+        },
+        "Condition": {
+          "ForAnyValue:StringNotLike": {
+            "${oidc_provider_url}:sub": "system:serviceaccount:crossplane-system:default"
+          },
+          "ForAnyValue:StringLike": {
+              "${oidc_provider_url}:sub": "system:serviceaccount:crossplane-system:provider-terraform*"
+          }
+        }
+      }
+    ]
+  }

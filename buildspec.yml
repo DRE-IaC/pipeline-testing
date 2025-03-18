@@ -1,0 +1,114 @@
+##
+# buildspec.yml
+# CodeBuild build specification; mainly re-inits the source (for pipeline), init components, and performs the requested
+# action.
+# @see https://docs.aws.amazon.com/codebuild/latest/userguide/build-spec-ref.html
+##
+# yamllint disable rule:indentation
+---
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    GITHUB_BASE_URL: https://github.com/DRE-IaC/
+    REPOSITORY_NAME: infrastructure-controlplane-2
+
+phases:
+  install:
+    commands:
+      # Used for debug purposes, show who is running this script.
+      - aws sts get-caller-identity
+
+      # Set the INIT variable if we need to initialize due to being in a CI build.
+      - |
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        DESIRED_VERSION=v3.9.3 ./get_helm.sh
+        helm plugin install https://github.com/databus23/helm-diff
+        pip install --upgrade pip
+        apt update
+        apt-get install -y gnupg software-properties-common
+        wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list
+        apt-add-repository ppa:ansible/ansible
+        apt update
+        apt install -y terraform git pax ansible
+        pip3 install awscli
+        terraform version
+        echo "Updates and installs are done"
+      - |
+        if [ "$TARGET_ENV" == "int" ] || [ "$ACTION" == "init" ]; then
+          echo ""
+          export INIT="1"
+        fi
+
+  pre_build:
+    commands:
+      # Re-initialize repository and update submodules (no .git in CodePipeline) and makes sure that environments is
+      # pointing to master.
+      - |
+        if [ -n "$INIT" ]; then
+          if [ ! -e ".git" ]; then
+            git init
+            git remote add origin "${GITHUB_BASE_URL}${REPOSITORY_NAME}"
+            git fetch origin "$CODEBUILD_RESOLVED_SOURCE_VERSION" >& /dev/null
+            git checkout -f "$CODEBUILD_RESOLVED_SOURCE_VERSION" >& /dev/null
+          fi
+        fi
+
+      # Override the branch when we're in a CI scenario.
+      - |
+        if [ "$TARGET_ENV" == "int" ]; then
+          export BRANCH=$(git name-rev --name-only $CODECOMMIT_PULL_REQUEST_SRC_COMMIT);
+          echo "Using branch $BRANCH";
+        fi
+
+      # Create ~/.aws/config file for delivery profile.
+      - mkdir -p ~/.aws
+      - |
+        cat << EOF > ~/.aws/config
+        [profile controlplane]
+        credential_source = EcsContainer
+        role_arn = ${TF_VAR_assume_role_arn}
+        EOF
+
+      # Initialize the repository for the given target environment.
+      - |
+        if [ -n "$INIT" ]; then
+          pwd
+          aws sts get-caller-identity --profile controlplane --region us-east-2
+          aws sts assume-role --role-arn arn:aws:iam::565393059711:role/dre-delivery --role-session-name=assumed_role --profile controlplane --region us-east-2
+          ./tf.sh -e $TARGET_ENV -a init -v true --code-pipeline on
+        fi
+
+  build:
+    commands:
+      - |
+        if [[ "$ACTION" == "init" ]]; then
+          echo "Done; nothing to build with initialization."
+        fi
+
+        if [[ "$ACTION" == "plan" ]]; then
+          echo "Running 'plan', used to plan the infrastructure deployment."
+          ./tf.sh -e $TARGET_ENV -a plan --code-pipeline on
+        fi
+
+        if [[ "$ACTION" == "apply" ]]; then
+          echo "Running 'apply', used to deploy the infrastructure plan."
+          ./tf.sh -e $TARGET_ENV -a apply --skip-interactive on --code-pipeline on
+        fi
+
+        if [[ "$ACTION" == "bigbang_diff" ]]; then
+          echo "Running 'bigbang_diff', used to show a diff of the helm charts with the installed charts in the cluster."
+          ./tf.sh -e $TARGET_ENV -a bigbang_diff --skip-interactive on --code-pipeline on
+        fi
+
+        if [[ "$ACTION" == "bigbang_upgrade" ]]; then
+          echo "Running 'bigbang_upgrade', used to do a helm upgrade-install on all helm charts for our cluster."
+          ./tf.sh -e $TARGET_ENV -a bigbang_upgrade --skip-interactive on --code-pipeline on
+        fi
+
+artifacts:
+  files:
+    - '**/*'

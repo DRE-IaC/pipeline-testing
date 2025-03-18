@@ -1,0 +1,54 @@
+---
+- name: "Helm Diff"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Helm Diff clean logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_helm_diff.log;
+    args:
+      chdir: ../
+    register: clean_helm_diff
+    failed_when: >
+      (clean_helm_diff.stderr != '') or
+      (clean_helm_diff.rc != 0)
+
+  - name: "Display output: Clean Diff logs"
+    debug:
+      msg: "{{ clean_helm_diff.stdout }}"
+    when: clean_helm_diff.stdout != ''
+
+  - name: "Display stderr: Clean Diff logs"
+    debug:
+      msg: "{{ clean_helm_diff.stderr }}"
+    when: clean_helm_diff.stderr != ''
+
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Helm Repo add Project Calico"
+    kubernetes.core.helm_repository:
+      name: projectcalico
+      repo_url: https://docs.tigera.io/calico/charts
+
+  - name: "Helm Diff Check"
+    shell: helm diff upgrade calico projectcalico/tigera-operator --version v3.25.1 -f ./kubernetes/kubernetes-calico/values.yaml && helm diff upgrade  -f ./kubernetes/eks-gp3-storageclass/values.yaml ebs-gp3-storageclass ./kubernetes/eks-gp3-storageclass  && helm diff upgrade  -n ack-system ack-s3-controller -f ./kubernetes/ack/s3-chart-v0.1.5/values.yaml ./kubernetes/ack/s3-chart-v0.1.5 --set aws.region="us-east-1" --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::510467250861:role/framework/use1-dre-ack-s3-controller"  && helm diff upgrade  -n harness-delegate harness-delegate -f ./kubernetes/harness/values2.yaml ./kubernetes/harness  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::510467250861:role/framework/use1-dre-harnessdelegate"  | tee ./tf_logs/last_{{ env }}_helm_diff.log;
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_helm_diff.log
+    register: helm_diff
+    changed_when: >
+      (helm_diff.stderr != '') or
+      (helm_diff.rc != 0)
+
+  - name: "Display output: Helm Diff"
+    debug:
+      msg: "{{ helm_diff.stdout }}"
+    when: helm_diff.stdout != ''
+
+  - name: "Display stderr: Helm Diff"
+    debug:
+      msg: "{{ helm_diff.stderr }}"
+    when: helm_diff.stderr != ''

@@ -1,0 +1,48 @@
+---
+- name: "Install EBS GP3 StorageClass"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+
+  - name: "Clean EBS Storageclass installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_ebs_storageclass.log;
+    args:
+      chdir: ../
+    register: clean_helm_install_ebs_storageclass
+    failed_when: >
+      (clean_helm_install_ebs_storageclass.stderr != '') or
+      (clean_helm_install_ebs_storageclass.rc != 0)
+
+  - name: "Display output: Clean EBS Storageclass installation logs"
+    debug:
+      msg: "{{ clean_helm_install_ebs_storageclass.stdout }}"
+    when: clean_helm_install_ebs_storageclass.stdout != ''
+
+  - name: "Display stderr: Clean EBS Storageclass installation logs"
+    debug:
+      msg: "{{ clean_helm_install_ebs_storageclass.stderr }}"
+    when: clean_helm_install_ebs_storageclass.stderr != ''
+
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Install EBS GP3 Storage Class"
+    shell: helm upgrade --install -f ./kubernetes/eks-gp3-storageclass/values.yaml ebs-gp3-storageclass ./kubernetes/eks-gp3-storageclass
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_ebs_storageclass.log
+    register: helm_install_ebs_storageclass
+    failed_when: >
+      (helm_install_ebs_storageclass.stderr != '') or
+      (helm_install_ebs_storageclass.rc != 0)
+
+  - name: "Display output: Install EBS Storage Class"
+    debug:
+      msg: "{{ helm_install_ebs_storageclass.stdout }}"
+    when: helm_install_ebs_storageclass.stdout != ''
+
+  - name: "Display stderr: Install EBS Storage Class"
+    debug:
+      msg: "{{ helm_install_ebs_storageclass.stderr }}"
+    when: helm_install_ebs_storageclass.stderr != ''

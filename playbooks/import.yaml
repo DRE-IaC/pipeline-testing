@@ -1,0 +1,28 @@
+---
+- name: Create an execution plan for preview
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+  - ansible.legacy.import_tasks: source_config.yaml
+  - ansible.legacy.import_tasks: select_workspace.yaml
+  - ansible.legacy.import_tasks: copy_tf_files.yaml
+
+  - name: Terraform import
+    shell: terraform import -var-file=./env/{{ env }}/vars {{ opts }};
+    args:
+      chdir: ../
+    register: terraform_import
+    failed_when: >
+      (terraform_import.stderr != '') or
+      (terraform_import.rc != 0)
+
+  - name: "Display output: Terraform import"
+    debug:
+      msg: "{{ terraform_import.stdout }}"
+    when: terraform_import.stdout != ''
+
+  - name: "Display stderr: Terraform import"
+    debug:
+      msg: "{{ terraform_import.stderr }}"
+    when: terraform_import.stderr != ''

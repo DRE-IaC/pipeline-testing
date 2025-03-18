@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: download-tools
+  namespace: ${namespace}
+data:
+  download-tools.sh: |
+    #!/bin/sh
+    wget -O /custom-tools/yq https://github.com/mikefarah/yq/releases/download/v4.43.1/yq_linux_amd64
+
+    chmod +x /custom-tools/yq
+
+    wget -qO- https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.4.1/kustomize_v5.4.1_linux_amd64.tar.gz | tar -xz -C /custom-tools
+
+    chmod +x /custom-tools/kustomize

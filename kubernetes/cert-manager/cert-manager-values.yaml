@@ -1,0 +1,14 @@
+webhook:
+  certManager:
+    enabled: True
+    cert:
+      create: True
+      issuerRef:
+        group: cert-manager.io
+        kind: ClusterIssuer
+        name: ca-issuer
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: ${rolearn}
+leaderElect: True
+concurrent: 1

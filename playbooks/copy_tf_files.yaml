@@ -1,0 +1,38 @@
+---
+- name: Copy envinronment specific configuration to the root of the directory
+  shell: cd ./env/{{ env }}; pax -wrs'/\.tf$/\.env\.tf/' *.tf ../../; cd ../../;
+  args:
+    chdir: ../
+  register: copy_env_configuration
+  failed_when: >
+    (copy_env_configuration.stderr != '') or
+    (copy_env_configuration.rc != 0)
+
+- name: "Display output: Copy envinronment specific configuration to the root of the directory"
+  debug:
+    msg: "{{ copy_env_configuration.stdout }}"
+  when: copy_env_configuration.stdout != ''
+
+- name: "Display stderr: Copy envinronment specific varsfiles to the root of the directory"
+  debug:
+    msg: "{{ copy_env_configuration.stderr }}"
+  when: copy_env_configuration.stderr != ''
+
+- name: Copy envinronment specific varsfiles to the root of the directory
+  shell: cd ./env/{{ env }}; pax -wrs'/\.tfvars$/\.env\.tfvars/' *.tfvars ../../; cd ../../;
+  args:
+    chdir: ../
+  register: copy_vars_configuration
+  failed_when: >
+    (copy_vars_configuration.stderr != '') or
+    (copy_vars_configuration.rc != 0)
+
+- name: "Display output: Copy envinronment specific varsfiles to the root of the directory"
+  debug:
+    msg: "{{ copy_vars_configuration.stdout }}"
+  when: copy_vars_configuration.stdout != ''
+
+- name: "Display stderr: Copy envinronment specific varsfiles to the root of the directory"
+  debug:
+    msg: "{{ copy_vars_configuration.stderr }}"
+  when: copy_vars_configuration.stderr != ''

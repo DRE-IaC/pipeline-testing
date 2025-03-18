@@ -1,0 +1,67 @@
+---
+- name: "Install ACK IAM"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+
+  - name: "Clean ACK IAM installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_ack_iam.log;
+    args:
+      chdir: ../
+    register: clean_helm_install_iam
+    failed_when: >
+      (clean_helm_install_iam.stderr != '') or
+      (clean_helm_install_iam.rc != 0)
+
+  - name: "Display output: Clean ACK IAM installation logs"
+    debug:
+      msg: "{{ clean_helm_install_iam.stdout }}"
+    when: clean_helm_install_iam.stdout != ''
+
+  - name: "Display stderr: Clean ACK IAM installation logs"
+    debug:
+      msg: "{{ clean_helm_install_iam.stderr }}"
+    when: clean_helm_install_iam.stderr != ''
+
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Get ACK IAM Role Arn"
+    shell: aws iam list-roles --query "Roles[*].Arn" | grep ack-iam-controller | sed s/\"//g | sed s/\,//g | tr -d '[:space:]'
+    args:
+      chdir: ../
+    register: ack_iam_role_arn
+    failed_when: >
+      (ack_iam_role_arn.stderr != '') or
+      (ack_iam_role_arn.rc != 0)
+
+  - name: "Display output: Get ACK IAM Role Arn"
+    debug:
+      msg: "{{ ack_iam_role_arn.stdout }}"
+    when: ack_iam_role_arn.stdout != ''
+
+  - name: "Display stderr: Get ACK IAM Role Arn"
+    debug:
+      msg: "{{ ack_iam_role_arn.stderr }}"
+    when: ack_iam_role_arn.stderr != ''
+  - name: "Install ACK IAM"
+    shell: helm upgrade --install --create-namespace -n ack-system ack-iam-controller -f ./kubernetes/ack/iam-chart-v1.3.0/values.yaml ./kubernetes/ack/iam-chart-v1.3.0 --set aws.region={{ region }} --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"={{ ack_iam_role_arn.stdout }} | tee ./tf_logs/last_{{ env }}_install_ack_iam.log
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_ack_iam.log
+    when: ack_iam_role_arn.rc == 0
+    register: helm_install_ack_iam
+    failed_when: >
+      (helm_install_ack_iam.stderr != '') or
+      (helm_install_ack_iam.rc != 0)
+
+  - name: "Display output: Install ACK IAM"
+    debug:
+      msg: "{{ helm_install_ack_iam.stdout }}"
+    when: helm_install_ack_iam.stdout != ''
+
+  - name: "Display stderr: Install ACK IAM"
+    debug:
+      msg: "{{ helm_install_ack_iam.stderr }}"
+    when: helm_install_ack_iam.stderr != ''

@@ -1,0 +1,39 @@
+---
+- name: Clean last destroy plan log
+  shell: rm -rf ./tf_logs/last_{{ env }}_destroy_plan.log;
+  args:
+    chdir: ../
+  register: clean_destroy_plan
+  failed_when: >
+    (clean_destroy_plan.stderr != '') or
+    (clean_destroy_plan.rc != 0)
+
+- name: "Display output: Clean last destroy plan log"
+  debug:
+    msg: "{{ clean_destroy_plan.stdout }}"
+  when: clean_destroy_plan.stdout != ''
+
+- name: "Display stderr: Clean last destroy plan log"
+  debug:
+    msg: "{{ clean_destroy_plan.stderr }}"
+  when: clean_destroy_plan.stderr != ''
+
+- name: Terraform destroy plan
+  shell: terraform plan -destroy | tee ./tf_logs/last_{{ env }}_destroy_plan.log;
+  args:
+    chdir: ../
+    creates: ./tf_logs/last_{{ env }}_destroy_plan.log
+  register: terraform_destroy_plan
+  failed_when: >
+    (terraform_destroy_plan.stderr != '') or
+    (terraform_destroy_plan.rc != 0)
+
+- name: "Display output: Terraform destroy plan"
+  debug:
+    msg: "{{ terraform_destroy_plan.stdout }}"
+  when: terraform_destroy_plan.stdout != ''
+
+- name: "Display stderr: Terraform destroy plan"
+  debug:
+    msg: "{{ terraform_destroy_plan.stderr }}"
+  when: terraform_destroy_plan.stderr != ''

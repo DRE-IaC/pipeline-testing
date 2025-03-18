@@ -1,0 +1,28 @@
+---
+- name: Terraform state
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+  - ansible.legacy.import_tasks: source_config.yaml
+  - ansible.legacy.import_tasks: select_workspace.yaml
+  - ansible.legacy.import_tasks: copy_tf_files.yaml
+
+  - name: Terraform state
+    shell: terraform state {{ opts }};
+    args:
+      chdir: ../
+    register: terraform_state
+    failed_when: >
+      (terraform_state.stderr != '') or
+      (terraform_state.rc != 0)
+
+  - name: "Display output: Terraform state"
+    debug:
+      msg: "{{ terraform_state.stdout }}"
+    when: terraform_state.stdout != ''
+
+  - name: "Display stderr: Terraform state"
+    debug:
+      msg: "{{ terraform_state.stderr }}"
+    when: terraform_state.stderr != ''

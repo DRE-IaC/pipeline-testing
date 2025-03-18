@@ -1,0 +1,272 @@
+---
+- name: Upgrade in AWS EKS
+  hosts: localhost
+  gather_facts: false
+
+  collections:
+    - community.kubernetes
+
+  tasks:
+    - ansible.legacy.import_tasks: create_log_dir.yaml
+    - ansible.legacy.import_tasks: check_dependencies.yaml
+    - ansible.legacy.import_tasks: eks_update_config.yaml
+
+- name: Upgrade kube-proxy in AWS EKS
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Get kube-proxy DaemonSet info
+      k8s_info:
+        api_version: apps/v1
+        kind: DaemonSet
+        name: kube-proxy
+        namespace: kube-system
+        kubeconfig: ~/.kube/config
+      register: kube_proxy_info
+
+    - name: Upgrade kube-proxy
+      k8s:
+        api_version: apps/v1
+        kind: DaemonSet
+        name: kube-proxy
+        namespace: kube-system
+        kubeconfig: ~/.kube/config
+        definition:
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: kube-proxy
+                    image: 602401143452.dkr.ecr.us-east-1.amazonaws.com/eks/kube-proxy:{{ kubeproxy_desired_version }}
+      vars:
+        kubeproxy_desired_version: "v1.22.17-eksbuild.2"
+      when: "'602401143452.dkr.ecr.us-east-1.amazonaws.com/eks/kube-proxy:' + kubeproxy_desired_version != kube_proxy_info.resources[0].spec.template.spec.containers[0].image"
+
+- name: "Install Calico"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+
+  - name: "Clean Calico installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_calico.log ./tf_logs/last_{{ env }}_diff_calico.log;
+    args:
+      chdir: ../
+    register: clean_helm_install_calico
+
+  - name: "Display output: Clean Calico installation logs"
+    debug:
+      msg: "{{ clean_helm_install_calico.stdout }}"
+    when: clean_helm_install_calico.stdout != ''
+
+  - name: "Display stderr: Clean Calico installation logs"
+    debug:
+      msg: "{{ clean_helm_install_calico.stderr }}"
+    when: clean_helm_install_calico.stderr != ''
+
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Install Calico"
+    shell: helm repo add projectcalico https://docs.tigera.io/calico/charts && helm upgrade --install  calico projectcalico/tigera-operator --version v3.25.1 -f ./kubernetes/kubernetes-calico/values.yaml | tee ./tf_logs/last_{{ env }}_install_calico.log
+    delay: 10
+    retries: 300
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_calico.log
+    register: helm_install_calico
+
+  - name: "Display output: Install Calico"
+    debug:
+      msg: "{{ helm_install_calico.stdout }}"
+    when: helm_install_calico.stdout != ''
+
+
+## Install EBS GP3 StorageClass
+
+  - name: "Clean EBS Storageclass installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_ebs_storageclass.log;
+    args:
+      chdir: ../
+    register: clean_helm_install_ebs_storageclass
+    failed_when: >
+      (clean_helm_install_ebs_storageclass.stderr != '') or
+      (clean_helm_install_ebs_storageclass.rc != 0)
+
+  - name: "Display output: Clean EBS Storageclass installation logs"
+    debug:
+      msg: "{{ clean_helm_install_ebs_storageclass.stdout }}"
+    when: clean_helm_install_ebs_storageclass.stdout != ''
+
+  - name: "Display stderr: Clean EBS Storageclass installation logs"
+    debug:
+      msg: "{{ clean_helm_install_ebs_storageclass.stderr }}"
+    when: clean_helm_install_ebs_storageclass.stderr != ''
+
+  - name: "Install EBS GP3 Storage Class"
+    shell: helm upgrade  --install -f ./kubernetes/eks-gp3-storageclass/values.yaml ebs-gp3-storageclass ./kubernetes/eks-gp3-storageclass
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_ebs_storageclass.log
+    register: helm_install_ebs_storageclass
+
+  - name: "Display output: Install EBS Storage Class"
+    debug:
+      msg: "{{ helm_install_ebs_storageclass.stdout }}"
+    when: helm_install_ebs_storageclass.stdout != ''
+
+
+
+#install Ack S3 controller
+
+  - name: "Clean ACK S3 installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_ack_s3.log;
+    args:
+      chdir: ../
+    register: clean_helm_install_s3
+    failed_when: >
+      (clean_helm_install_s3.stderr != '') or
+      (clean_helm_install_s3.rc != 0)
+
+  - name: "Display output: Clean ACK S3 installation logs"
+    debug:
+      msg: "{{ clean_helm_install_s3.stdout }}"
+    when: clean_helm_install_s3.stdout != ''
+
+  - name: "Display stderr: Clean ACK S3 installation logs"
+    debug:
+      msg: "{{ clean_helm_install_s3.stderr }}"
+    when: clean_helm_install_s3.stderr != ''
+
+  - name: "Get ACK S3 Role Arn"
+    shell: aws iam list-roles --query "Roles[*].Arn" | grep ack-s3-controller | sed s/\"//g | sed s/\,//g | tr -d '[:space:]'
+    args:
+      chdir: ../
+    register: ack_s3_role_arn
+    failed_when: >
+      (ack_s3_role_arn.stderr != '') or
+      (ack_s3_role_arn.rc != 0)
+
+  - name: "Display output: Get ACK S3 Role Arn"
+    debug:
+      msg: "{{ ack_s3_role_arn.stdout }}"
+    when: ack_s3_role_arn.stdout != ''
+
+  - name: "Display stderr: Get ACK S3 Role Arn"
+    debug:
+      msg: "{{ ack_s3_role_arn.stderr }}"
+    when: ack_s3_role_arn.stderr != ''
+
+  - name: "Install ACK S3"
+    shell: helm upgrade --install -n ack-system --create-namespace ack-s3-controller -f ./kubernetes/ack/s3-chart-v0.1.5/values.yaml ./kubernetes/ack/s3-chart-v0.1.5 --set aws.region={{ region }} --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"={{ ack_s3_role_arn.stdout }} | tee ./tf_logs/last_{{ env }}_install_ack_s3.log
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_ack_s3.log
+    when: ack_s3_role_arn.rc == 0
+    register: helm_install_ack_s3
+
+  - name: "Display output: Install ACK S3"
+    debug:
+      msg: "{{ helm_install_ack_s3.stdout }}"
+    when: helm_install_ack_s3.stdout != ''
+
+
+#install Harness Delegate
+
+  - name: "Clean Harness Delegate installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_harness_delegate.log;
+    args:
+      chdir: ../
+    register: clean_helm_install_harness_delegate
+    failed_when: >
+      (clean_helm_install_harness_delegate.stderr != '') or
+      (clean_helm_install_harness_delegate.rc != 0)
+
+  - name: "Display output: Clean Harness delegate installation logs"
+    debug:
+      msg: "{{ clean_helm_install_harness_delegate.stdout }}"
+    when: clean_helm_install_harness_delegate.stdout != ''
+
+  - name: "Display stderr: Clean Harness Delegate installation logs"
+    debug:
+      msg: "{{ clean_helm_install_harness_delegate.stderr }}"
+    when: clean_helm_install_harness_delegate.stderr != ''
+
+  - name: "Get Harness Deleagate Role Arn"
+    shell: aws iam list-roles --query "Roles[*].Arn" | grep harnessdelegate| sed s/\"//g | sed s/\,//g | tr -d '[:space:]'
+    args:
+      chdir: ../
+    register: harness_delegate_role_arn
+    failed_when: >
+      (harness_delegate_role_arn.stderr != '') or
+      (harness_delegate_role_arn.rc != 0)
+
+  - name: "Display output: Get Harness Delegate Role Arn"
+    debug:
+      msg: "{{ harness_delegate_role_arn.stdout }}"
+    when: harness_delegate_role_arn.stdout != ''
+
+  - name: "Display stderr: Get Harness Delegate Role Arn"
+    debug:
+      msg: "{{ harness_delegate_role_arn.stderr }}"
+    when: harness_delegate_role_arn.stderr != ''
+
+  - name: "Install Harness Delegate"
+    shell: helm upgrade --install -n harness-delegate --create-namespace  harness-delegate -f ./kubernetes/harness/values2.yaml ./kubernetes/harness  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"={{ harness_delegate_role_arn.stdout }}|tee ./tf_logs/last_{{ env }}_install_harness_delegate.log
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_harness_delegate.log
+    when: harness_delegate_role_arn.rc == 0
+    register: helm_install_harness_delegate
+    # failed_when: >
+    #   (helm_install_harness_delegate.stderr != '') or
+    #   (helm_install_harness_delegate.rc != 0)
+    #   (helm_install_calico.stderr != '') or
+    #   (helm_install_calico.rc != 0)
+    #   (helm_install_ebs_storageclass.stderr != '') or
+    #   (helm_install_ebs_storageclass.rc != 0)
+    #   (helm_install_nginx_ingress.stderr != '') or
+    #   (helm_install_nginx_ingress.rc != 0)
+    #   (ack_s3_role_arn.stderr != '') or
+    #   (ack_s3_role_arn.rc != 0)
+    #   (helm_install_ack_s3.stderr != '') or
+    #   (helm_install_ack_s3.rc != 0)
+
+  - name: "Display output: Install HARNESS DELEGATE"
+    debug:
+      msg: "{{ helm_install_harness_delegate.stdout }}"
+    when: helm_install_harness_delegate.stdout == ''
+
+  - name: "Display stderr: Install EBS Storage Class"
+    debug:
+      msg: "{{ helm_install_ebs_storageclass.stderr }}"
+    when: helm_install_ebs_storageclass.stderr != ''
+    changed_when: >
+      (helm_install_ebs_storageclass.stderr != '') or
+      (helm_install_ebs_storageclass.rc != 0)
+
+  - name: "Display stderr: Install ACK S3"
+    debug:
+      msg: "{{ helm_install_ack_s3.stderr }}"
+    when: helm_install_ack_s3.stderr != ''
+    changed_when: >
+      (ack_s3_role_arn.stderr != '') or
+      (ack_s3_role_arn.rc != 0)
+
+  - name: "Display stderr: Install Calico"
+    debug:
+      msg: "{{ helm_install_calico.stderr }}"
+    when: helm_install_calico.stderr != ''
+    changed_when: >
+      (helm_install_calico.stderr != '') or
+      (helm_install_calico.rc != 0)
+
+  - name: "Display stderr: Install HARNESS DELEGATE"
+    debug:
+      msg: "{{ helm_install_harness_delegate.stderr }}"
+    when: helm_install_harness_delegate.stderr != ''
+    changed_when: >
+      (helm_install_harness_delegate.stderr != '') or
+      (helm_install_harness_delegate.rc != 0)
+
+

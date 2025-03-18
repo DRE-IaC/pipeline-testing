@@ -1,0 +1,74 @@
+---
+- name: "Install external dns"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+
+  - name: "Clean external dns installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_external_dns.log;
+    args:
+      chdir: ../
+    register: clean_helm_install_external_dns
+    failed_when: >
+      (clean_helm_install_external_dns.stderr != '') or
+      (clean_helm_install_external_dns.rc != 0)
+
+  - name: "Display output: Clean external dns installation logs"
+    debug:
+      msg: "{{ clean_helm_install_external_dns.stdout }}"
+    when: clean_helm_install_external_dns.stdout != ''
+
+  - name: "Display stderr: Clean External Dns installation logs"
+    debug:
+      msg: "{{ clean_helm_install_external_dns.stderr }}"
+    when: clean_helm_install_external_dns.stderr != ''
+
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Get External Dns Role Arn"
+    shell: aws iam list-roles --query "Roles[*].Arn" | grep externaldns | sed s/\"//g | sed s/\,//g | tr -d '[:space:]'
+    args:
+      chdir: ../
+    register: external_dns_role_arn
+    failed_when: >
+      (external_dns_role_arn.stderr != '') or
+      (external_dns_role_arn.rc != 0)
+      
+  - name: "Update Domainfilters and zonefilters"
+    shell: sh external_dns.sh;
+    args:
+      chdir: ../
+    register: domain_zone
+
+  - name: "Display output: Get External DNS Role Arn"
+    debug:
+      msg: "{{ external_dns_role_arn.stdout }}"
+    when: external_dns_role_arn.stdout != ''
+
+  - name: "Display stderr: Get External Dns Role Arn"
+    debug:
+      msg: "{{ external_dns_role_arn.stderr }}"
+    when: external_dns_role_arn.stderr != ''
+
+  - name: "Install External Dns"
+    shell: helm install --create-namespace -n external-dns dre -f ./kubernetes/external-dns/values_final.yaml ./kubernetes/external-dns/ --set aws.region={{ region }} --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"={{ external_dns_role_arn.stdout }} | tee ./tf_logs/last_{{ env }}_install_external_dns.log
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_external_dns.log
+    when: external_dns_role_arn.rc == 0
+    register: helm_install_external_dns
+    failed_when: >
+      (helm_install_external_dns.stderr != '') or
+      (helm_install_external_dns.rc != 0)
+
+  - name: "Display output: Install External Dns"
+    debug:
+      msg: "{{ helm_install_external_dns.stdout }}"
+    when: helm_install_external_dns.stdout != ''
+
+  - name: "Display stderr: Install External Dns"
+    debug:
+      msg: "{{ helm_install_external_dns.stderr }}"
+    when: helm_install_external_dns.stderr != ''

@@ -1,0 +1,68 @@
+---
+- name: "Install ACK S3"
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: create_log_dir.yaml
+  - ansible.legacy.import_tasks: check_dependencies.yaml
+
+  - name: "Clean ACK S3 installation logs"
+    shell: rm -rf ./tf_logs/last_{{ env }}_install_ack_s3.log;
+    args:
+      chdir: ../
+    register: clean_helm_install_s3
+    failed_when: >
+      (clean_helm_install_s3.stderr != '') or
+      (clean_helm_install_s3.rc != 0)
+
+  - name: "Display output: Clean ACK S3 installation logs"
+    debug:
+      msg: "{{ clean_helm_install_s3.stdout }}"
+    when: clean_helm_install_s3.stdout != ''
+
+  - name: "Display stderr: Clean ACK S3 installation logs"
+    debug:
+      msg: "{{ clean_helm_install_s3.stderr }}"
+    when: clean_helm_install_s3.stderr != ''
+
+  - ansible.legacy.import_tasks: eks_update_config.yaml
+
+  - name: "Get ACK S3 Role Arn"
+    shell: aws iam list-roles --query "Roles[*].Arn" | grep ack-s3-controller | sed s/\"//g | sed s/\,//g | tr -d '[:space:]'
+    args:
+      chdir: ../
+    register: ack_s3_role_arn
+    failed_when: >
+      (ack_s3_role_arn.stderr != '') or
+      (ack_s3_role_arn.rc != 0)
+
+  - name: "Display output: Get ACK S3 Role Arn"
+    debug:
+      msg: "{{ ack_s3_role_arn.stdout }}"
+    when: ack_s3_role_arn.stdout != ''
+
+  - name: "Display stderr: Get ACK S3 Role Arn"
+    debug:
+      msg: "{{ ack_s3_role_arn.stderr }}"
+    when: ack_s3_role_arn.stderr != ''
+
+  - name: "Install ACK S3"
+    shell: helm upgrade --install --create-namespace -n ack-system ack-s3-controller -f ./kubernetes/ack/s3-chart-v0.1.5/values.yaml ./kubernetes/ack/s3-chart-v0.1.5 --set aws.region={{ region }} --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"={{ ack_s3_role_arn.stdout }} | tee ./tf_logs/last_{{ env }}_install_ack_s3.log
+    args:
+      chdir: ../
+      creates: ./tf_logs/last_{{ env }}_install_ack_s3.log
+    when: ack_s3_role_arn.rc == 0
+    register: helm_install_ack_s3
+    failed_when: >
+      (helm_install_ack_s3.stderr != '') or
+      (helm_install_ack_s3.rc != 0)
+
+  - name: "Display output: Install ACK S3"
+    debug:
+      msg: "{{ helm_install_ack_s3.stdout }}"
+    when: helm_install_ack_s3.stdout != ''
+
+  - name: "Display stderr: Install ACK S3"
+    debug:
+      msg: "{{ helm_install_ack_s3.stderr }}"
+    when: helm_install_ack_s3.stderr != ''

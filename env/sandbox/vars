@@ -1,0 +1,5 @@
+profile="sandbox"
+eks_primary_nodes_desired=3
+eks_primary_nodes_min_size=1
+eks_primary_nodes_max_size=5
+sandbox=true

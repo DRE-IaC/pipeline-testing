@@ -1,0 +1,58 @@
+---
+
+# check terraform
+- name: "Check if terraform program exists"
+  ansible.builtin.shell:
+    cmd: command -v terraform
+  register: terraform_command
+  failed_when: >
+    (terraform_command.stderr != '') or
+    (terraform_command.rc != 0)
+
+- name: "Display output: Check if terraform program exists"
+  debug:
+    msg: "{{ terraform_command.stdout }}"
+  when: terraform_command.stdout != ''
+
+- name: "Display stderr: Check if terraform program exists"
+  debug:
+    msg: "{{ terraform_command.stderr }}"
+  when: terraform_command.stderr != ''
+
+# check helm
+- name: "Check if helm program exists"
+  ansible.builtin.shell:
+    cmd: command -v helm
+  register: helm_command
+  failed_when: >
+    (helm_command.stderr != '') or
+    (helm_command.rc != 0)
+
+- name: "Display output: Check if helm program exists"
+  debug:
+    msg: "{{ helm_command.stdout }}"
+  when: helm_command.stdout != ''
+
+- name: "Display stderr: Check if helm program exists"
+  debug:
+    msg: "{{ helm_command.stderr }}"
+  when: helm_command.stderr != ''
+
+# check kubectl
+- name: "Check if kubectl program exists"
+  ansible.builtin.shell:
+    cmd: command -v kubectl
+  register: kubectl_command
+  failed_when: >
+    (kubectl_command.stderr != '') or
+    (kubectl_command.rc != 0)
+
+- name: "Display output: Check if kubectl program exists"
+  debug:
+    msg: "{{ kubectl_command.stdout }}"
+  when: kubectl_command.stdout != ''
+
+- name: "Display stderr: Check if kubectl program exists"
+  debug:
+    msg: "{{ kubectl_command.stderr }}"
+  when: kubectl_command.stderr != ''

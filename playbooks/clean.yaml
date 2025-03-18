@@ -1,0 +1,6 @@
+---
+- name: Clean terraform initialization files
+  hosts: localhost
+
+  tasks:
+  - ansible.legacy.import_tasks: clean_task.yaml

@@ -1,0 +1,45 @@
+---
+- name: "Update config for EKS cluster"
+  shell: |
+    kubectl get nodes;
+    if [ $? != 0 ]; then
+      # echo "Update Kube Config"
+      aws eks update-kubeconfig --name use2-iac-controlplane --region {{ region }} --role-arn arn:aws:iam::565393059711:role/service-role/codebuild-use2-iac-controlplane-deploy-service-role --profile controlplane;
+    else
+      echo "Cluster is accessible";
+    fi
+  args:
+    chdir: ../
+  register: eks_update_config
+  failed_when: >
+    (eks_update_config.rc != 0)
+
+- name: "Show config"
+  register: eks_debug_0
+  shell: |
+    cat ~/.kube/config
+
+- name: "DEBUG - Display Config"
+  debug:
+    msg: "{{ eks_debug_0.stdout }}"
+  when: eks_debug_0.stdout != ''
+
+- name: "Test config"
+  register: eks_debug_1
+  shell: |
+    kubectl get nodes
+
+- name: "DEBUG - Display Kubectl Get Nodes"
+  debug:
+    msg: "{{ eks_debug_1.stdout }}"
+  when: eks_debug_1.stdout != ''
+
+- name: "Display stderr: Update config for EKS cluster"
+  debug:
+    msg: "{{ eks_update_config.stderr }}"
+  when: eks_update_config.stderr != ''
+
+- name: "Display output: Update config for EKS cluster"
+  debug:
+    msg: "{{ eks_update_config.stdout }}"
+  when: eks_update_config.stdout != ''
