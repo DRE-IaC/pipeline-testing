@@ -25,10 +25,15 @@ on:
           - bigbang_diff
           - bigbang_upgrade
 
+# Add this permissions block
+permissions:
+  id-token: write
+  contents: read
+
 env:
   TF_VAR_assume_role_arn: arn:aws:iam::344565808703:role/terraform-deployment
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
-  REPOSITORY_NAME: infrastructure-controlplane-2
+  REPOSITORY_NAME: pipeline-testing
 
 jobs:
   deploy:
@@ -43,7 +48,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
-          role-to-assume: arn:aws:iam::344565808703:role/cluster-role
+          role-to-assume: arn:aws:iam::344565808703:role/controlplane
           aws-region: us-east-2
       
       - name: Aws details
