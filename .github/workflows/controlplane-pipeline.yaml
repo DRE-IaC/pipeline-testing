@@ -97,7 +97,6 @@ jobs:
       
       - name: Initialize Terraform
         run: |
-          aws sts get-caller-identity --profile controlplane --region us-east-2
           ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
       
       - name: Run deployment action
