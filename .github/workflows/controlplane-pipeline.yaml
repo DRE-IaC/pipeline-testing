@@ -1,59 +1,39 @@
-name: Infrastructure Deployment
+name: Infrastructure Control Plane CI/CD
 
 on:
   push:
     branches: master
-  workflow_dispatch:
-    inputs:
-      target_env:
-        description: 'Target Environment'
-        required: true
-        default: 'sandbox'
-        type: choice
-        options:
-          - sandbox
-          - primary
-      action:
-        description: 'Action to perform'
-        required: true
-        default: 'plan'
-        type: choice
-        options:
-          - init
-          - plan
-          - apply
-          - bigbang_diff
-          - bigbang_upgrade
-
-# Add this permissions block
-permissions:
-  id-token: write
-  contents: read
 
 env:
-  AWS_REGION: us-east-2
-  TERRAFORM_ROLE_ARN: arn:aws:iam::344565808703:role/terraform-deployment
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
   REPOSITORY_NAME: pipeline-testing
+  AWS_REGION: us-east-2
+
+permissions:
+  id-token: write   # Required for OIDC
+  contents: read    # Required to checkout the repository
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     
+    env:
+      TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'int' }}
+      ACTION: ${{ github.event.inputs.ACTION || 'plan' }}
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      
-      - name: Configure AWS Credentials
+
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.TERRAFORM_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::344565808703:role/controlplane
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: GithubActionsSession
-      
-      - name: Verify AWS credentials
+
+      - name: Show caller identity
         run: aws sts get-caller-identity
       
       - name: Install dependencies
@@ -62,51 +42,83 @@ jobs:
           chmod 700 get_helm.sh
           DESIRED_VERSION=v3.9.3 ./get_helm.sh
           helm plugin install https://github.com/databus23/helm-diff
-          sudo apt-get update
-          sudo apt-get install -y gnupg software-properties-common pax
+          pip install --upgrade pip
+          sudo apt update
+          sudo apt-get install -y gnupg software-properties-common
           wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
           echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
           sudo apt-add-repository ppa:ansible/ansible
-          sudo apt-get update
-          sudo apt-get install -y terraform ansible
- 
+          sudo apt update
+          sudo apt install -y terraform git pax ansible
+          pip3 install awscli
           terraform version
           echo "Updates and installs are done"
-      
-      - name: Set target environment
-        id: set-target-env
+
+      - name: Set INIT variable
         run: |
-          if ${{ github.event_name == 'workflow_dispatch' }}; then
-            echo "TARGET_ENV=${{ github.event.inputs.target_env }}" >> $GITHUB_ENV
-            echo "ACTION=${{ github.event.inputs.action }}" >> $GITHUB_ENV
-          elif [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/master" ]]; then
-            echo "TARGET_ENV=primary" >> $GITHUB_ENV
-            echo "ACTION=plan" >> $GITHUB_ENV
-          else
-            echo "TARGET_ENV=sandbox" >> $GITHUB_ENV
-            echo "ACTION=plan" >> $GITHUB_ENV
+          if [ "$TARGET_ENV" == "int" ] || [ "$ACTION" == "init" ]; then
+            echo "INIT=1" >> $GITHUB_ENV
           fi
-      
-      - name: Initialize Terraform
-        env:
-          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Set branch for PR
+        if: ${{ env.TARGET_ENV == 'int' && github.event_name == 'pull_request' }}
         run: |
-          ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
-      
-      - name: Run deployment action
-        env:
-          AWS_REGION: ${{ env.AWS_REGION }}
+          echo "BRANCH=${{ github.head_ref }}" >> $GITHUB_ENV
+          echo "Using branch ${{ github.head_ref }}"
+
+      - name: Configure AWS role for deployment
         run: |
-          if [[ "${{ env.ACTION }}" == "plan" ]]; then
+          mkdir -p ~/.aws
+          cat << EOF > ~/.aws/config
+          [profile controlplane]
+          role_arn = arn:aws:iam::565393059711:role/dre-delivery
+          source_profile = default
+          region = ${{ env.AWS_REGION }}
+          EOF
+
+      - name: Configure EKS access
+        if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
+        run: |
+          aws eks update-kubeconfig --name <YOUR-EKS-CLUSTER-NAME> --region ${{ env.AWS_REGION }}
+
+      - name: Initialize repository
+        if: ${{ env.INIT == '1' }}
+        env:
+          TF_VAR_assume_role_arn: arn:aws:iam::565393059711:role/dre-delivery
+        run: |
+          aws sts get-caller-identity --profile controlplane --region ${{ env.AWS_REGION }}
+          ./tf.sh -e $TARGET_ENV -a init -v true --code-pipeline on
+
+      - name: Run requested action
+        env:
+          TF_VAR_assume_role_arn: arn:aws:iam::565393059711:role/dre-delivery
+        run: |
+          if [[ "$ACTION" == "init" ]]; then
+            echo "Done; nothing to build with initialization."
+          fi
+
+          if [[ "$ACTION" == "plan" ]]; then
             echo "Running 'plan', used to plan the infrastructure deployment."
-            ./tf.sh -e ${{ env.TARGET_ENV }} -a plan --code-pipeline on
-          elif [[ "${{ env.ACTION }}" == "apply" ]]; then
-            echo "Running 'apply', used to deploy the infrastructure plan."
-            ./tf.sh -e ${{ env.TARGET_ENV }} -a apply --skip-interactive on --code-pipeline on
-          elif [[ "${{ env.ACTION }}" == "bigbang_diff" ]]; then
-            echo "Running 'bigbang_diff', used to show a diff of the helm charts."
-            ./tf.sh -e ${{ env.TARGET_ENV }} -a bigbang_diff --skip-interactive on --code-pipeline on
-          elif [[ "${{ env.ACTION }}" == "bigbang_upgrade" ]]; then
-            echo "Running 'bigbang_upgrade', used to do a helm upgrade-install."
-            ./tf.sh -e ${{ env.TARGET_ENV }} -a bigbang_upgrade --skip-interactive on --code-pipeline on
+            ./tf.sh -e $TARGET_ENV -a plan --code-pipeline on
           fi
+
+          if [[ "$ACTION" == "apply" ]]; then
+            echo "Running 'apply', used to deploy the infrastructure plan."
+            ./tf.sh -e $TARGET_ENV -a apply --skip-interactive on --code-pipeline on
+          fi
+
+          if [[ "$ACTION" == "bigbang_diff" ]]; then
+            echo "Running 'bigbang_diff', used to show a diff of the helm charts with the installed charts in the cluster."
+            ./tf.sh -e $TARGET_ENV -a bigbang_diff --skip-interactive on --code-pipeline on
+          fi
+
+          if [[ "$ACTION" == "bigbang_upgrade" ]]; then
+            echo "Running 'bigbang_upgrade', used to do a helm upgrade-install on all helm charts for our cluster."
+            ./tf.sh -e $TARGET_ENV -a bigbang_upgrade --skip-interactive on --code-pipeline on
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts
+          path: ./**/*
