@@ -1,55 +1,112 @@
-name: Terraform CI/CD
+name: Infrastructure Deployment
 
 on:
   push:
     branches: master
   workflow_dispatch:
+    inputs:
+      target_env:
+        description: 'Target Environment'
+        required: true
+        default: 'sandbox'
+        type: choice
+        options:
+          - sandbox
+          - primary
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - init
+          - plan
+          - apply
+          - bigbang_diff
+          - bigbang_upgrade
 
 env:
-  AWS_REGION: us-east-1
-  TF_VERSION: 1.5.0
+  TF_VAR_assume_role_arn: arn:aws:iam::344565808703:role/terraform-deployment
+  GITHUB_BASE_URL: https://github.com/DRE-IaC/
+  REPOSITORY_NAME: infrastructure-controlplane-2
 
 jobs:
-  terraform:
-    name: Terraform
+  deploy:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v3
-      with:
-        role-to-assume: arn:aws:iam::344565808703:role/controlplane
-        aws-region: ${{ env.AWS_REGION }}
-        
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: ${{ env.TF_VERSION }}
-        
-    - name: Terraform Init
-      run: |
-        terraform init \
-          -backend-config="bucket=use2-iac-controlplane-tf-states-snarrabelly" \
-          -backend-config="key=env:/primary/terraform.tfstate" \
-          -backend-config="region=${{ env.AWS_REGION }}" \
-          -backend-config="dynamodb_table=use2-iac-controlplane-tf-state-lock"
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       
-    - name: Terraform Format
-      run: terraform fmt -check
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::344565808703:role/cluster-role
+          aws-region: us-east-2
       
-    - name: Terraform Validate
-      run: terraform validate
+      - name: Aws details
+        run: aws sts get-caller-identity
       
-    - name: Terraform Plan
-      id: plan
-      run: terraform plan -no-color
+      - name: Install dependencies
+        run: |
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          DESIRED_VERSION=v3.9.3 ./get_helm.sh
+          helm plugin install https://github.com/databus23/helm-diff
+          
+          sudo apt-get update
+          sudo apt-get install -y gnupg software-properties-common
+          wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+          sudo apt-add-repository ppa:ansible/ansible
+          sudo apt-get update
+          sudo apt-get install -y terraform ansible
+          
+          terraform version
+          echo "Updates and installs are done"
       
-    - name: Terraform Apply
-      if: github.ref == 'refs/heads/master'
-      run: terraform apply -auto-approve
+      - name: Set up AWS config
+        run: |
+          mkdir -p ~/.aws
+          cat << EOF > ~/.aws/config
+          [profile controlplane]
+          credential_source = Ec2InstanceMetadata
+          role_arn = ${TF_VAR_assume_role_arn}
+          EOF
+      
+      - name: Set target environment
+        id: set-target-env
+        run: |
+          if ${{ github.event_name == 'workflow_dispatch' }}; then
+            echo "TARGET_ENV=${{ github.event.inputs.target_env }}" >> $GITHUB_ENV
+            echo "ACTION=${{ github.event.inputs.action }}" >> $GITHUB_ENV
+          elif [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/master" ]]; then
+            echo "TARGET_ENV=primary" >> $GITHUB_ENV
+            echo "ACTION=plan" >> $GITHUB_ENV
+          else
+            echo "TARGET_ENV=sandbox" >> $GITHUB_ENV
+            echo "ACTION=plan" >> $GITHUB_ENV
+          fi
+      
+      - name: Initialize Terraform
+        run: |
+          aws sts get-caller-identity --profile controlplane --region us-east-2
+          ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
+      
+      - name: Run deployment action
+        run: |
+          if [[ "${{ env.ACTION }}" == "plan" ]]; then
+            echo "Running 'plan', used to plan the infrastructure deployment."
+            ./tf.sh -e ${{ env.TARGET_ENV }} -a plan --code-pipeline on
+          elif [[ "${{ env.ACTION }}" == "apply" ]]; then
+            echo "Running 'apply', used to deploy the infrastructure plan."
+            ./tf.sh -e ${{ env.TARGET_ENV }} -a apply --skip-interactive on --code-pipeline on
+          elif [[ "${{ env.ACTION }}" == "bigbang_diff" ]]; then
+            echo "Running 'bigbang_diff', used to show a diff of the helm charts."
+            ./tf.sh -e ${{ env.TARGET_ENV }} -a bigbang_diff --skip-interactive on --code-pipeline on
+          elif [[ "${{ env.ACTION }}" == "bigbang_upgrade" ]]; then
+            echo "Running 'bigbang_upgrade', used to do a helm upgrade-install."
+            ./tf.sh -e ${{ env.TARGET_ENV }} -a bigbang_upgrade --skip-interactive on --code-pipeline on
+          fi
