@@ -60,15 +60,14 @@ jobs:
           chmod 700 get_helm.sh
           DESIRED_VERSION=v3.9.3 ./get_helm.sh
           helm plugin install https://github.com/databus23/helm-diff
-          
           sudo apt-get update
-          sudo apt-get install -y gnupg software-properties-common
+          sudo apt-get install -y gnupg software-properties-common pax
           wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
           echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
           sudo apt-add-repository ppa:ansible/ansible
           sudo apt-get update
           sudo apt-get install -y terraform ansible
-          
+ 
           terraform version
           echo "Updates and installs are done"
       
