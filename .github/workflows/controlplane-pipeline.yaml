@@ -50,9 +50,6 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::344565808703:role/controlplane
           aws-region: us-east-2
-          # Adding these lines to make credentials available to Terraform
-          output-credentials: true
-          credentials-file: false
       
       - name: Aws details
         run: aws sts get-caller-identity
@@ -81,7 +78,13 @@ jobs:
           [profile controlplane]
           role_arn = ${TF_VAR_assume_role_arn}
           region = us-east-2
+          # Add the credential provider that works with the GitHub OIDC provider
+          web_identity_token_file = /tmp/web_identity_token
           EOF
+    
+          # Write the OIDC token to a file that AWS CLI can use
+          echo "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" > /tmp/web_identity_token
+      
       
       - name: Set target environment
         id: set-target-env
