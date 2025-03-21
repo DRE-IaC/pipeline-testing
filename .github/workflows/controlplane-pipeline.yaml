@@ -8,10 +8,9 @@ on:
       TARGET_ENV:
         description: 'Target environment'
         required: true
-        default: 'int'
+        default: 'primary'
         type: choice
         options:
-          - int
           - primary
           - sandbox
       ACTION:
@@ -28,9 +27,10 @@ on:
 
 env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
-  REPOSITORY_NAME: pipeline-testing
+  REPOSITORY_NAME: infrastructure-controlplane-2
   AWS_REGION: us-east-2
   AWS_ROLE_ARN: arn:aws:iam::344565808703:role/controlplane
+  TF_VAR_assume_role_arn: arn:aws:iam::565393059711:role/dre-delivery
 
 permissions:
   id-token: write   # Required for OIDC
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'int' }}
+      TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'primary' }}
       ACTION: ${{ github.event.inputs.ACTION || 'plan' }}
       
     steps:
@@ -80,9 +80,19 @@ jobs:
 
       - name: Set INIT variable
         run: |
-          if [ "$TARGET_ENV" == "int" ] || [ "$ACTION" == "init" ]; then
+          if [ "${{ env.ACTION }}" == "init" ]; then
             echo "INIT=1" >> $GITHUB_ENV
           fi
+
+      # Create AWS config file for role assumption
+      - name: Configure AWS profiles
+        run: |
+          mkdir -p ~/.aws
+          cat << EOF > ~/.aws/config
+          [profile controlplane]
+          credential_source = Environment
+          role_arn = ${TF_VAR_assume_role_arn}
+          EOF
 
       - name: Configure EKS access (if needed)
         if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
@@ -92,33 +102,33 @@ jobs:
       - name: Initialize repository
         if: ${{ env.INIT == '1' }}
         run: |
-          # No need to set TF_VAR_assume_role_arn since credentials are already configured
-          ./tf.sh -e $TARGET_ENV -a init -v true --code-pipeline on
+          aws sts get-caller-identity --profile controlplane --region ${{ env.AWS_REGION }}
+          ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
 
       - name: Run requested action
         run: |
-          if [[ "$ACTION" == "init" ]]; then
+          if [[ "${{ env.ACTION }}" == "init" ]]; then
             echo "Done; nothing to build with initialization."
           fi
 
-          if [[ "$ACTION" == "plan" ]]; then
+          if [[ "${{ env.ACTION }}" == "plan" ]]; then
             echo "Running 'plan', used to plan the infrastructure deployment."
-            ./tf.sh -e $TARGET_ENV -a plan --code-pipeline on
+            ./tf.sh -e ${{ env.TARGET_ENV }} -a plan --code-pipeline on
           fi
 
-          if [[ "$ACTION" == "apply" ]]; then
+          if [[ "${{ env.ACTION }}" == "apply" ]]; then
             echo "Running 'apply', used to deploy the infrastructure plan."
-            ./tf.sh -e $TARGET_ENV -a apply --skip-interactive on --code-pipeline on
+            ./tf.sh -e ${{ env.TARGET_ENV }} -a apply --skip-interactive on --code-pipeline on
           fi
 
-          if [[ "$ACTION" == "bigbang_diff" ]]; then
+          if [[ "${{ env.ACTION }}" == "bigbang_diff" ]]; then
             echo "Running 'bigbang_diff', used to show a diff of the helm charts with the installed charts in the cluster."
-            ./tf.sh -e $TARGET_ENV -a bigbang_diff --skip-interactive on --code-pipeline on
+            ./tf.sh -e ${{ env.TARGET_ENV }} -a bigbang_diff --skip-interactive on --code-pipeline on
           fi
 
-          if [[ "$ACTION" == "bigbang_upgrade" ]]; then
+          if [[ "${{ env.ACTION }}" == "bigbang_upgrade" ]]; then
             echo "Running 'bigbang_upgrade', used to do a helm upgrade-install on all helm charts for our cluster."
-            ./tf.sh -e $TARGET_ENV -a bigbang_upgrade --skip-interactive on --code-pipeline on
+            ./tf.sh -e ${{ env.TARGET_ENV }} -a bigbang_upgrade --skip-interactive on --code-pipeline on
           fi
 
       - name: Upload artifacts
