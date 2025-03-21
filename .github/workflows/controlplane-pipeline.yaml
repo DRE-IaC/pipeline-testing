@@ -20,7 +20,8 @@ jobs:
     env:
       TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'primary' }}
       ACTION: ${{ github.event.inputs.ACTION || 'plan' }}
-      TF_VAR_assume_role_arn: ${{ env.AWS_ROLE_ARN }}
+      # Reference top-level env variable correctly
+      TF_VAR_assume_role_arn: arn:aws:iam::344565808703:role/controlplane
       
     steps:
       - name: Checkout code
@@ -63,7 +64,7 @@ jobs:
           cat << EOF > ~/.aws/config
           [profile controlplane]
           credential_source = EcsContainer
-          role_arn = ${TF_VAR_assume_role_arn}
+          role_arn = ${AWS_ROLE_ARN}
           EOF
           
           # Verify config is created
