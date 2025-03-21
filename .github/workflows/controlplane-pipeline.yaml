@@ -20,6 +20,7 @@ jobs:
     env:
       TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'primary' }}
       ACTION: ${{ github.event.inputs.ACTION || 'plan' }}
+      TF_VAR_assume_role_arn: ${{ env.AWS_ROLE_ARN }}
       
     steps:
       - name: Checkout code
@@ -55,32 +56,19 @@ jobs:
           terraform version
           echo "Updates and installs are done"
 
-      # Create AWS config file without using role assumption
+      # Create AWS config file using the code from buildspec.yaml
       - name: Configure AWS profiles
         run: |
           mkdir -p ~/.aws
           cat << EOF > ~/.aws/config
           [profile controlplane]
-          region = ${AWS_REGION}
-          output = json
-          EOF
-          
-          # Export the current temporary credentials to the config
-          cat << EOF > ~/.aws/credentials
-          [controlplane]
-          aws_access_key_id = ${AWS_ACCESS_KEY_ID}
-          aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
-          aws_session_token = ${AWS_SESSION_TOKEN}
+          credential_source = EcsContainer
+          role_arn = ${TF_VAR_assume_role_arn}
           EOF
           
           # Verify config is created
           ls -la ~/.aws/
           cat ~/.aws/config
-          
-      - name: Configure EKS access (if needed)
-        if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
-        run: |
-          aws eks update-kubeconfig --name dre-primary2 --region ${{ env.AWS_REGION }}
 
       # Set TERM variable to fix tput errors
       - name: Set terminal environment
