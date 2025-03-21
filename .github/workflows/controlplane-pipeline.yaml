@@ -3,10 +3,34 @@ name: Infrastructure Control Plane CI/CD
 on:
   push:
     branches: master
+  workflow_dispatch:
+    inputs:
+      TARGET_ENV:
+        description: 'Target environment'
+        required: true
+        default: 'int'
+        type: choice
+        options:
+          - int
+          - primary
+          - sandbox
+      ACTION:
+        description: 'Action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - init
+          - plan
+          - apply
+          - bigbang_diff
+          - bigbang_upgrade
+
 env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
   REPOSITORY_NAME: pipeline-testing
   AWS_REGION: us-east-2
+  AWS_ROLE_ARN: arn:aws:iam::344565808703:role/controlplane
 
 permissions:
   id-token: write   # Required for OIDC
@@ -26,10 +50,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Single AWS authentication step using the defined role
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::344565808703:role/controlplane
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Show caller identity
@@ -59,38 +84,18 @@ jobs:
             echo "INIT=1" >> $GITHUB_ENV
           fi
 
-      - name: Set branch for PR
-        if: ${{ env.TARGET_ENV == 'int' && github.event_name == 'pull_request' }}
-        run: |
-          echo "BRANCH=${{ github.head_ref }}" >> $GITHUB_ENV
-          echo "Using branch ${{ github.head_ref }}"
-
-      - name: Configure AWS role for deployment
-        run: |
-          mkdir -p ~/.aws
-          cat << EOF > ~/.aws/config
-          [profile controlplane]
-          role_arn = arn:aws:iam::565393059711:role/dre-delivery
-          source_profile = default
-          region = ${{ env.AWS_REGION }}
-          EOF
-
-      - name: Configure EKS access
+      - name: Configure EKS access (if needed)
         if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
         run: |
-          aws eks update-kubeconfig --name <YOUR-EKS-CLUSTER-NAME> --region ${{ env.AWS_REGION }}
+          aws eks update-kubeconfig --name dre-primary2 --region ${{ env.AWS_REGION }}
 
       - name: Initialize repository
         if: ${{ env.INIT == '1' }}
-        env:
-          TF_VAR_assume_role_arn: arn:aws:iam::565393059711:role/dre-delivery
         run: |
-          aws sts get-caller-identity --profile controlplane --region ${{ env.AWS_REGION }}
+          # No need to set TF_VAR_assume_role_arn since credentials are already configured
           ./tf.sh -e $TARGET_ENV -a init -v true --code-pipeline on
 
       - name: Run requested action
-        env:
-          TF_VAR_assume_role_arn: arn:aws:iam::565393059711:role/dre-delivery
         run: |
           if [[ "$ACTION" == "init" ]]; then
             echo "Done; nothing to build with initialization."
