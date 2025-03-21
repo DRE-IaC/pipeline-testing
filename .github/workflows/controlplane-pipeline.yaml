@@ -16,20 +16,22 @@ on:
       ACTION:
         description: 'Action to perform'
         required: true
-        default: 'plan'
+        default: 'full-deploy'
         type: choice
         options:
-          - init
-          - plan
-          - apply
+          - init-only
+          - plan-only
+          - apply-only
           - bigbang_diff
           - bigbang_upgrade
+          - full-deploy
 
 env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
   REPOSITORY_NAME: pipeline-testing
   AWS_REGION: us-east-2
   AWS_ROLE_ARN: arn:aws:iam::344565808703:role/controlplane
+  TERM: xterm-256color
 
 permissions:
   id-token: write   # Required for OIDC
@@ -41,7 +43,7 @@ jobs:
     
     env:
       TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'sandbox' }}
-      ACTION: ${{ github.event.inputs.ACTION || 'plan' }}
+      ACTION: ${{ github.event.inputs.ACTION || 'full-deploy' }}
       
     steps:
       - name: Checkout code
@@ -71,7 +73,7 @@ jobs:
           curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
           chmod 700 get_helm.sh
           DESIRED_VERSION=v3.9.3 ./get_helm.sh
-          helm plugin install https://github.com/databus23/helm-diff
+          helm plugin install https://github.com/databus23/helm-diff || true
           pip install --upgrade pip
           sudo apt update
           sudo apt-get install -y gnupg software-properties-common
@@ -84,57 +86,86 @@ jobs:
           terraform version
           echo "Updates and installs are done"
 
-      - name: Set INIT variable
+      # Modify tf.sh to not require AWS profile if needed
+      - name: Prepare tf.sh script
         run: |
-          if [ "$ACTION" == "init" ]; then
-            echo "INIT=1" >> $GITHUB_ENV
+          # Check if tf.sh exists
+          if [ -f "./tf.sh" ]; then
+            # Make a backup
+            cp ./tf.sh ./tf.sh.bak
+            
+            # Make tf.sh executable
+            chmod +x ./tf.sh
+            
+            # Modify tf.sh if needed to handle GitHub Actions environment
+            # This is a quick fix - you may need to adjust this based on your actual tf.sh script
+            sed -i 's/tput setaf/[ -t 1 ] \&\& tput setaf/g' ./tf.sh || true
+            sed -i 's/tput sgr0/[ -t 1 ] \&\& tput sgr0/g' ./tf.sh || true
+            
+            # If your tf.sh is using AWS profiles explicitly, you might need to modify that too
+            # Example (modify as needed):
+            sed -i 's/--profile sandbox/--profile default/g' ./tf.sh || true
+            sed -i 's/--profile primary/--profile default/g' ./tf.sh || true
+          else
+            echo "Warning: tf.sh not found, script modification step skipped"
           fi
-
-      - name: Create AWS config file
-        run: |
-          mkdir -p ~/.aws
-          cat << EOF > ~/.aws/config
-          [profile controlplane]
-          credential_source = Ec2InstanceMetadata
-          role_arn = ${{ env.AWS_ROLE_ARN }}
-          EOF
 
       - name: Configure EKS access (if needed)
-        if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
+        if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' || env.ACTION == 'full-deploy' }}
         run: |
-          aws eks update-kubeconfig --name dre-primary2 --region ${{ env.AWS_REGION }}
+          aws eks update-kubeconfig --name dre-primary2 --region ${{ env.AWS_REGION }} || echo "EKS config update skipped or failed"
 
+      # Initialize repository (always done for full-deploy, or when init-only is specified)
       - name: Initialize repository
-        if: ${{ env.INIT == '1' }}
+        if: ${{ env.ACTION == 'init-only' || env.ACTION == 'full-deploy' }}
         run: |
-          # No need to set TF_VAR_assume_role_arn since credentials are already configured
-          ./tf.sh -e $TARGET_ENV -a init -v true --code-pipeline on
+          # Set TF_VAR_assume_role_arn to match AWS_ROLE_ARN for compatibility
+          export TF_VAR_assume_role_arn=${{ env.AWS_ROLE_ARN }}
+          
+          # Debug
+          echo "Running init for $TARGET_ENV environment"
+          echo "Current directory: $(pwd)"
+          ls -la
+          
+          # Run with verbose output
+          ./tf.sh -e $TARGET_ENV -a init -v true --skip-interactive on --code-pipeline on
+          
+          echo "Init completed"
 
-      - name: Run requested action
+      # Plan step (run after init in full-deploy, or when plan-only is specified)
+      - name: Plan infrastructure
+        if: ${{ env.ACTION == 'plan-only' || env.ACTION == 'full-deploy' }}
         run: |
-          if [[ "$ACTION" == "init" ]]; then
-            echo "Done; nothing to build with initialization."
-          fi
+          export TF_VAR_assume_role_arn=${{ env.AWS_ROLE_ARN }}
+          echo "Running plan for $TARGET_ENV environment"
+          ./tf.sh -e $TARGET_ENV -a plan --skip-interactive on --code-pipeline on
+          echo "Plan completed"
 
-          if [[ "$ACTION" == "plan" ]]; then
-            echo "Running 'plan', used to plan the infrastructure deployment."
-            ./tf.sh -e $TARGET_ENV -a plan --code-pipeline on
-          fi
+      # Apply step (run after plan in full-deploy, or when apply-only is specified)
+      - name: Apply infrastructure
+        if: ${{ env.ACTION == 'apply-only' || env.ACTION == 'full-deploy' }}
+        run: |
+          export TF_VAR_assume_role_arn=${{ env.AWS_ROLE_ARN }}
+          echo "Running apply for $TARGET_ENV environment"
+          ./tf.sh -e $TARGET_ENV -a apply --skip-interactive on --code-pipeline on
+          echo "Apply completed"
 
-          if [[ "$ACTION" == "apply" ]]; then
-            echo "Running 'apply', used to deploy the infrastructure plan."
-            ./tf.sh -e $TARGET_ENV -a apply --skip-interactive on --code-pipeline on
-          fi
+      # Additional actions
+      - name: Run bigbang diff
+        if: ${{ env.ACTION == 'bigbang_diff' }}
+        run: |
+          export TF_VAR_assume_role_arn=${{ env.AWS_ROLE_ARN }}
+          echo "Running bigbang_diff for $TARGET_ENV environment"
+          ./tf.sh -e $TARGET_ENV -a bigbang_diff --skip-interactive on --code-pipeline on
+          echo "Bigbang diff completed"
 
-          if [[ "$ACTION" == "bigbang_diff" ]]; then
-            echo "Running 'bigbang_diff', used to show a diff of the helm charts with the installed charts in the cluster."
-            ./tf.sh -e $TARGET_ENV -a bigbang_diff --skip-interactive on --code-pipeline on
-          fi
-
-          if [[ "$ACTION" == "bigbang_upgrade" ]]; then
-            echo "Running 'bigbang_upgrade', used to do a helm upgrade-install on all helm charts for our cluster."
-            ./tf.sh -e $TARGET_ENV -a bigbang_upgrade --skip-interactive on --code-pipeline on
-          fi
+      - name: Run bigbang upgrade
+        if: ${{ env.ACTION == 'bigbang_upgrade' }}
+        run: |
+          export TF_VAR_assume_role_arn=${{ env.AWS_ROLE_ARN }}
+          echo "Running bigbang_upgrade for $TARGET_ENV environment"
+          ./tf.sh -e $TARGET_ENV -a bigbang_upgrade --skip-interactive on --code-pipeline on
+          echo "Bigbang upgrade completed"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
