@@ -3,31 +3,9 @@ name: Infrastructure Control Plane CI/CD
 on:
   push:
     branches: master
-  workflow_dispatch:
-    inputs:
-      TARGET_ENV:
-        description: 'Target environment'
-        required: true
-        default: 'primary'
-        type: choice
-        options:
-          - primary
-          - sandbox
-      ACTION:
-        description: 'Action to perform'
-        required: true
-        default: 'plan'
-        type: choice
-        options:
-          - init
-          - plan
-          - apply
-          - bigbang_diff
-          - bigbang_upgrade
-
 env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
-  REPOSITORY_NAME: infrastructure-controlplane-2
+  REPOSITORY_NAME: pipeline-testing
   AWS_REGION: us-east-2
   AWS_ROLE_ARN: arn:aws:iam::344565808703:role/controlplane
 
