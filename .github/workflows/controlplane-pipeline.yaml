@@ -20,8 +20,6 @@ jobs:
     env:
       TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'primary' }}
       ACTION: ${{ github.event.inputs.ACTION || 'plan' }}
-      # Reference top-level env variable correctly
-      TF_VAR_assume_role_arn: arn:aws:iam::344565808703:role/controlplane
       
     steps:
       - name: Checkout code
@@ -57,14 +55,17 @@ jobs:
           terraform version
           echo "Updates and installs are done"
 
-      # Create AWS config file using the code from buildspec.yaml
+      # Create AWS config file for GitHub Actions environment
       - name: Configure AWS profiles
         run: |
           mkdir -p ~/.aws
           cat << EOF > ~/.aws/config
           [profile controlplane]
-          credential_source = EcsContainer
+          region = ${AWS_REGION}
+          output = json
           role_arn = ${AWS_ROLE_ARN}
+          # Use credentials from GitHub Actions OIDC provider that were already configured
+          credential_source = Environment
           EOF
           
           # Verify config is created
@@ -82,6 +83,7 @@ jobs:
           ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
         env:
           TERM: xterm
+          AWS_PROFILE: controlplane
 
       - name: Run requested action
         if: ${{ env.ACTION != 'init' }}  # Skip if action is init since we already did it
@@ -107,6 +109,7 @@ jobs:
           fi
         env:
           TERM: xterm
+          AWS_PROFILE: controlplane
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
