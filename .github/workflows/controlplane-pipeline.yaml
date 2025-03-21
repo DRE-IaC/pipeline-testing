@@ -30,7 +30,6 @@ env:
   REPOSITORY_NAME: infrastructure-controlplane-2
   AWS_REGION: us-east-2
   AWS_ROLE_ARN: arn:aws:iam::344565808703:role/controlplane
-  TF_VAR_assume_role_arn: arn:aws:iam::565393059711:role/dre-delivery
 
 permissions:
   id-token: write   # Required for OIDC
@@ -85,7 +84,7 @@ jobs:
           cat << EOF > ~/.aws/config
           [profile controlplane]
           credential_source = Environment
-          role_arn = ${TF_VAR_assume_role_arn}
+          role_arn = ${AWS_ROLE_ARN}
           EOF
           
       - name: Configure EKS access (if needed)
