@@ -55,19 +55,45 @@ jobs:
           terraform version
           echo "Updates and installs are done"
 
-      # Skip creating a profile and directly use the environment credentials
-      # The credentials from configure-aws-credentials will be in environment variables
+      # Create AWS config file without using role assumption
+      - name: Configure AWS profiles
+        run: |
+          mkdir -p ~/.aws
+          cat << EOF > ~/.aws/config
+          [profile controlplane]
+          region = ${AWS_REGION}
+          output = json
+          EOF
+          
+          # Export the current temporary credentials to the config
+          cat << EOF > ~/.aws/credentials
+          [controlplane]
+          aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+          aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+          aws_session_token = ${AWS_SESSION_TOKEN}
+          EOF
+          
+          # Verify config is created
+          ls -la ~/.aws/
+          cat ~/.aws/config
+          # Don't print credentials for security
           
       - name: Configure EKS access (if needed)
         if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
         run: |
           aws eks update-kubeconfig --name dre-primary2 --region ${{ env.AWS_REGION }}
 
+      # Set TERM variable to fix tput errors
+      - name: Set terminal environment
+        run: |
+          echo "TERM=xterm" >> $GITHUB_ENV
+
       # Always run terraform init first, regardless of the action
       - name: Initialize Terraform
         run: |
-          # Remove profile argument if your script adds it
           ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
+        env:
+          TERM: xterm
 
       - name: Run requested action
         if: ${{ env.ACTION != 'init' }}  # Skip if action is init since we already did it
@@ -91,6 +117,8 @@ jobs:
             echo "Running 'bigbang_upgrade', used to do a helm upgrade-install on all helm charts for our cluster."
             ./tf.sh -e ${{ env.TARGET_ENV }} -a bigbang_upgrade --skip-interactive on --code-pipeline on
           fi
+        env:
+          TERM: xterm
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
