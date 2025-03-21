@@ -63,23 +63,6 @@ jobs:
         run: |
           aws eks update-kubeconfig --name dre-primary2 --region ${{ env.AWS_REGION }}
 
-      # Modify your backend.env.tfvars file to not use a profile
-      - name: Update Terraform backend configuration
-        run: |
-          # Remove profile setting from backend config if it exists
-          if [ -f backend.env.tfvars ]; then
-            sed -i '/profile/d' backend.env.tfvars
-          fi
-          
-          # Create backend config if it doesn't exist
-          if [ ! -f backend.env.tfvars ]; then
-            cat << EOF > backend.env.tfvars
-            bucket = "use2-iac-controlplane-tf-states-snarrabelly"
-            key    = "terraform/state/${TARGET_ENV}.tfstate"
-            region = "${AWS_REGION}"
-            EOF
-          fi
-
       # Always run terraform init first, regardless of the action
       - name: Initialize Terraform
         run: |
