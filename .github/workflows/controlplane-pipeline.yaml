@@ -76,7 +76,6 @@ jobs:
           # Verify config is created
           ls -la ~/.aws/
           cat ~/.aws/config
-          # Don't print credentials for security
           
       - name: Configure EKS access (if needed)
         if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
