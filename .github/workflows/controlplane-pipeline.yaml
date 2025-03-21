@@ -95,7 +95,6 @@ jobs:
       # Always run terraform init first, regardless of the action
       - name: Initialize Terraform
         run: |
-          aws sts get-caller-identity --profile controlplane --region ${{ env.AWS_REGION }}
           ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
 
       - name: Run requested action
