@@ -55,24 +55,35 @@ jobs:
           terraform version
           echo "Updates and installs are done"
 
-      # Create AWS config file for role assumption
-      - name: Configure AWS profiles
-        run: |
-          mkdir -p ~/.aws
-          cat << EOF > ~/.aws/config
-          [profile controlplane]
-          credential_source = Environment
-          role_arn = ${AWS_ROLE_ARN}
-          EOF
+      # Skip creating a profile and directly use the environment credentials
+      # The credentials from configure-aws-credentials will be in environment variables
           
       - name: Configure EKS access (if needed)
         if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
         run: |
           aws eks update-kubeconfig --name dre-primary2 --region ${{ env.AWS_REGION }}
 
+      # Modify your backend.env.tfvars file to not use a profile
+      - name: Update Terraform backend configuration
+        run: |
+          # Remove profile setting from backend config if it exists
+          if [ -f backend.env.tfvars ]; then
+            sed -i '/profile/d' backend.env.tfvars
+          fi
+          
+          # Create backend config if it doesn't exist
+          if [ ! -f backend.env.tfvars ]; then
+            cat << EOF > backend.env.tfvars
+            bucket = "use2-iac-controlplane-tf-states-snarrabelly"
+            key    = "terraform/state/${TARGET_ENV}.tfstate"
+            region = "${AWS_REGION}"
+            EOF
+          fi
+
       # Always run terraform init first, regardless of the action
       - name: Initialize Terraform
         run: |
+          # Remove profile argument if your script adds it
           ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
 
       - name: Run requested action
