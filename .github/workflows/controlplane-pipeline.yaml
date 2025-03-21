@@ -78,12 +78,6 @@ jobs:
           terraform version
           echo "Updates and installs are done"
 
-      - name: Set INIT variable
-        run: |
-          if [ "${{ env.ACTION }}" == "init" ]; then
-            echo "INIT=1" >> $GITHUB_ENV
-          fi
-
       # Create AWS config file for role assumption
       - name: Configure AWS profiles
         run: |
@@ -93,24 +87,21 @@ jobs:
           credential_source = Environment
           role_arn = ${TF_VAR_assume_role_arn}
           EOF
-
+          
       - name: Configure EKS access (if needed)
         if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
         run: |
           aws eks update-kubeconfig --name dre-primary2 --region ${{ env.AWS_REGION }}
 
-      - name: Initialize repository
-        if: ${{ env.INIT == '1' }}
+      # Always run terraform init first, regardless of the action
+      - name: Initialize Terraform
         run: |
           aws sts get-caller-identity --profile controlplane --region ${{ env.AWS_REGION }}
           ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
 
       - name: Run requested action
+        if: ${{ env.ACTION != 'init' }}  # Skip if action is init since we already did it
         run: |
-          if [[ "${{ env.ACTION }}" == "init" ]]; then
-            echo "Done; nothing to build with initialization."
-          fi
-
           if [[ "${{ env.ACTION }}" == "plan" ]]; then
             echo "Running 'plan', used to plan the infrastructure deployment."
             ./tf.sh -e ${{ env.TARGET_ENV }} -a plan --code-pipeline on
