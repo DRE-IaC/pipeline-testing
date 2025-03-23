@@ -5,8 +5,8 @@
  */
 
 provider "aws" {
-  region  = var.region
-  profile = var.profile
+  region = var.region
+  # Removed profile and assume_role as GitHub Actions already has the credentials
 }
 
 provider "kubernetes" {
@@ -16,7 +16,7 @@ provider "kubernetes" {
     api_version = "client.authentication.k8s.io/v1"
     command     = "aws"
     args        = [
-      "eks", "get-token", "--profile", var.profile, "--cluster-name",
+      "eks", "get-token", "--cluster-name",
       data.aws_eks_cluster.main.name, "--region", var.region
     ]
   }
@@ -30,8 +30,8 @@ provider "helm" {
       api_version = "client.authentication.k8s.io/v1"
       command     = "aws"
       args        = [
-      "eks", "get-token", "--profile", var.profile, "--cluster-name",
-      data.aws_eks_cluster.main.name, "--region", var.region
+        "eks", "get-token", "--cluster-name",
+        data.aws_eks_cluster.main.name, "--region", var.region
       ]
     }
   }
@@ -48,7 +48,7 @@ provider "kubectl" {
   exec {
     command     = "aws"
     args        = [
-      "eks", "get-token", "--profile", var.profile, "--cluster-name",
+      "eks", "get-token", "--cluster-name",
       data.aws_eks_cluster.main.name, "--region", var.region
     ]
     api_version = "client.authentication.k8s.io/v1beta1"
