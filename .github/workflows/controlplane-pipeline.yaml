@@ -15,6 +15,8 @@ permissions:
   id-token: write
   contents: read
   actions: write
+  issues: write
+  pull-requests: write
 
 jobs:
   plan:
@@ -41,19 +43,93 @@ jobs:
     needs: plan
     runs-on: ubuntu-latest
     steps:
-      - name: Approve or Reject
-        uses: trstringer/manual-approval@v1
+      - name: Create GitHub Issue for Approval
+        uses: actions/github-script@v7
         with:
-          secret: ${{ github.token }}
-          approvers: org-admins
-          minimum-approvals: 1
-          issue-title: "Approve Infrastructure Deployment"
-          issue-body: "Please review and approve the infrastructure changes."
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Manual Approval Required for Infrastructure Deployment',
+              body: `## Infrastructure Deployment Approval Needed
+
+              A new infrastructure deployment requires manual approval.
+
+              ### Workflow Details:
+              - Workflow Run: ${context.runId}
+              - Branch: ${context.ref}
+              - Commit: ${context.sha}
+
+              ### Instructions:
+              - To APPROVE this deployment, add a comment with the word "approved"
+              - To REJECT this deployment, add a comment with the word "rejected"
+
+              Please review the plan carefully before making a decision.`
+            })
+
+            // Create a pending status check
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'pending',
+              description: 'Waiting for manual approval',
+              context: 'manual-approval'
+            })
+
+            // Output the issue number for potential reference
+            core.setOutput('issue-number', issue.data.number)
+
+      - name: Wait for Approval
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const { owner, repo } = context.repo
+            const issueNumber = ${{ steps.create-issue.outputs.issue-number }}
+            
+            // Wait for comments on the issue
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: issueNumber
+            })
+
+            // Check for approval
+            const approvalComment = comments.find(comment => 
+              comment.body.toLowerCase().includes('approved')
+            )
+
+            if (approvalComment) {
+              // Set commit status to success
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: context.sha,
+                state: 'success',
+                description: 'Deployment approved',
+                context: 'manual-approval'
+              })
+              core.setOutput('approval-status', 'approved')
+            } else {
+              // Set commit status to failure
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: context.sha,
+                state: 'failure',
+                description: 'Deployment not approved',
+                context: 'manual-approval'
+              })
+              core.setOutput('approval-status', 'rejected')
+              core.setFailed('Deployment not approved')
+            }
 
   apply:
     needs: [plan, wait-for-approval]
+    if: needs.wait-for-approval.outputs.approval-status == 'approved'
     runs-on: ubuntu-latest
-    if: ${{ needs.wait-for-approval.outputs.approval-status == 'approved' }}
     
     steps:
       - name: Print Deployment Message
@@ -63,5 +139,4 @@ jobs:
           echo "Checking pre-deployment conditions..."
           echo "Validating configuration settings..."
           echo "Preparing resources for deployment..."
-          echo "Deployment in progress..."
           echo "Infrastructure deployment completed successfully! 🎉"
