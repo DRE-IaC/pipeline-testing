@@ -33,11 +33,6 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Run Terraform Plan
-        id: plan
-        run: |
-          ./tf.sh -e primary -a plan --code-pipeline on
-
       - name: Upload plan artifact
         uses: actions/upload-artifact@v4
         with:
@@ -53,7 +48,7 @@ jobs:
         uses: hmarr/auto-approve-action@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          required-reviewers: "your-username" # Replace with actual GitHub username
+          required-reviewers: "shravanrau" # Replace with actual GitHub username
 
   apply:
     name: Terraform Apply
