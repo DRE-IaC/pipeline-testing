@@ -1,19 +1,9 @@
 name: Infrastructure Control Plane CI/CD
 
 on:
-  workflow_dispatch:
-    inputs:
-      TARGET_ENV:
-        description: 'Target Environment'
-        required: true
-        default: 'primary'
-      ACTION:
-        type: choice
-        description: 'Initial Action'
-        options:
-        - plan
-        - apply
-        default: 'plan'
+  push:
+    branches: 
+      - master
 
 env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
@@ -24,16 +14,12 @@ env:
 permissions:
   id-token: write   # Required for OIDC
   contents: read    # Required to checkout the repository
-  actions: write   # Added to allow workflow approval
+  actions: write   # Allow workflow approval
 
 jobs:
   plan:
     runs-on: ubuntu-latest
     
-    env:
-      TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'primary' }}
-      ACTION: ${{ github.event.inputs.ACTION || 'plan' }}
-      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -66,13 +52,13 @@ jobs:
 
       - name: Initialize Terraform
         run: |
-          ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
+          ./tf.sh -e primary -a init -v true --code-pipeline on
         env:
           TERM: xterm
 
       - name: Run Terraform Plan
         run: |
-          ./tf.sh -e ${{ env.TARGET_ENV }} -a plan --code-pipeline on
+          ./tf.sh -e primary -a plan --code-pipeline on
         env:
           TERM: xterm
 
@@ -94,15 +80,17 @@ jobs:
           minimum-approvals: 1
           issue-title: "Approve Terraform Apply for ${{ github.ref }}"
           issue-body: "Please review and approve the Terraform plan before applying."
+          additional-info: |
+            Review the plan artifacts to understand the proposed changes.
+            
+            Approve to proceed with infrastructure deployment.
+            Reject to stop the deployment process.
 
   apply:
     needs: [plan, wait-for-approval]
     runs-on: ubuntu-latest
     if: ${{ needs.wait-for-approval.outputs.approval-status == 'approved' }}
     
-    env:
-      TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'primary' }}
-      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -122,12 +110,12 @@ jobs:
 
       - name: Initialize Terraform
         run: |
-          ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
+          ./tf.sh -e primary -a init -v true --code-pipeline on
         env:
           TERM: xterm
 
       - name: Run Terraform Apply
         run: |
-          ./tf.sh -e ${{ env.TARGET_ENV }} -a apply --skip-interactive on --code-pipeline on
+          ./tf.sh -e primary -a apply --skip-interactive on --code-pipeline on
         env:
           TERM: xterm
