@@ -1,41 +1,33 @@
 name: Infrastructure Control Plane CI/CD
 
 on:
-  push:
-    branches: master
   workflow_dispatch:
     inputs:
       TARGET_ENV:
-        description: 'Target environment'
+        description: 'Target Environment'
         required: true
         default: 'primary'
       ACTION:
-        description: 'Action to perform'
-        required: true
-        default: 'plan'
         type: choice
+        description: 'Initial Action'
         options:
-          - plan
-          - apply
-          - approve-plan
-          - reject-plan
-          - bigbang_diff
-          - bigbang_upgrade
+        - plan
+        - apply
+        default: 'plan'
 
 env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
   REPOSITORY_NAME: pipeline-testing
   AWS_REGION: us-east-2
   AWS_ROLE_ARN: arn:aws:iam::344565808703:role/controlplane
-  TERRAFORM_PLAN_FILE: terraform-plan.tfplan
 
 permissions:
   id-token: write   # Required for OIDC
   contents: read    # Required to checkout the repository
-  actions: write    # Required for approval actions
+  actions: write   # Added to allow workflow approval
 
 jobs:
-  deploy:
+  plan:
     runs-on: ubuntu-latest
     
     env:
@@ -48,16 +40,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Single AWS authentication step using the defined role
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Show caller identity
-        run: aws sts get-caller-identity
-      
       - name: Install dependencies
         run: |
           curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
@@ -76,137 +64,70 @@ jobs:
           terraform version
           echo "Updates and installs are done"
 
-      # Create AWS config file without using role assumption
-      - name: Configure AWS profiles
-        run: |
-          mkdir -p ~/.aws
-          cat << EOF > ~/.aws/config
-          [profile controlplane]
-          region = ${AWS_REGION}
-          output = json
-          EOF
-          
-          # Export the current temporary credentials to the config
-          cat << EOF > ~/.aws/credentials
-          [controlplane]
-          aws_access_key_id = ${AWS_ACCESS_KEY_ID}
-          aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
-          aws_session_token = ${AWS_SESSION_TOKEN}
-          EOF
-          
-          # Verify config is created
-          ls -la ~/.aws/
-          cat ~/.aws/config
-          # Don't print credentials for security
-          
-      - name: Configure EKS access (if needed)
-        if: ${{ env.ACTION == 'bigbang_diff' || env.ACTION == 'bigbang_upgrade' }}
-        run: |
-          aws eks update-kubeconfig --name dre-primary2 --region ${{ env.AWS_REGION }}
-
-      # Set TERM variable to fix tput errors
-      - name: Set terminal environment
-        run: |
-          echo "TERM=xterm" >> $GITHUB_ENV
-
-      # Always run terraform init first, regardless of the action
       - name: Initialize Terraform
         run: |
           ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
         env:
           TERM: xterm
 
-      # Create directory for plan file
-      - name: Create plan directory
-        if: ${{ env.ACTION == 'plan' }}
-        run: mkdir -p terraform-plans
-
-      - name: Run requested action
-        if: ${{ env.ACTION != 'init' && env.ACTION != 'approve-plan' && env.ACTION != 'reject-plan' }}
+      - name: Run Terraform Plan
         run: |
-          if [[ "${{ env.ACTION }}" == "plan" ]]; then
-            echo "Running 'plan', used to plan the infrastructure deployment."
-            ./tf.sh -e ${{ env.TARGET_ENV }} -a plan -o terraform-plans/${{ env.TERRAFORM_PLAN_FILE }} --code-pipeline on
-            
-            # Create summary of the plan
-            echo "## Terraform Plan Complete" >> $GITHUB_STEP_SUMMARY
-            echo "To approve this plan, manually trigger this workflow with action 'approve-plan'" >> $GITHUB_STEP_SUMMARY
-            echo "To reject this plan, manually trigger this workflow with action 'reject-plan'" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [[ "${{ env.ACTION }}" == "apply" ]]; then
-            echo "Running 'apply', used to deploy the infrastructure plan."
-            ./tf.sh -e ${{ env.TARGET_ENV }} -a apply --skip-interactive on --code-pipeline on
-          fi
-
-          if [[ "${{ env.ACTION }}" == "bigbang_diff" ]]; then
-            echo "Running 'bigbang_diff', used to show a diff of the helm charts with the installed charts in the cluster."
-            ./tf.sh -e ${{ env.TARGET_ENV }} -a bigbang_diff --skip-interactive on --code-pipeline on
-          fi
-
-          if [[ "${{ env.ACTION }}" == "bigbang_upgrade" ]]; then
-            echo "Running 'bigbang_upgrade', used to do a helm upgrade-install on all helm charts for our cluster."
-            ./tf.sh -e ${{ env.TARGET_ENV }} -a bigbang_upgrade --skip-interactive on --code-pipeline on
-          fi
+          ./tf.sh -e ${{ env.TARGET_ENV }} -a plan --code-pipeline on
         env:
           TERM: xterm
 
-      # Upload plan artifact if we're in plan mode
-      - name: Upload plan artifact
-        if: ${{ env.ACTION == 'plan' }}
+      - name: Upload plan artifacts
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
-          path: terraform-plans/${{ env.TERRAFORM_PLAN_FILE }}
-          retention-days: 1
+          path: ./**/*
 
-      # Handle approval workflow
-      - name: Request Manual Approval
-        if: ${{ env.ACTION == 'plan' }}
+  wait-for-approval:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve or Reject
         uses: trstringer/manual-approval@v1
         with:
-          secret: ${{ github.TOKEN }}
-          approvers: ${{ github.actor }}
+          secret: ${{ github.token }}
+          approvers: org-admins
           minimum-approvals: 1
-          issue-title: "Approve or Reject Terraform Plan"
-          issue-body: |
-            A Terraform plan has been generated and requires your approval before applying.
-            
-            To approve and apply the plan:
-            - Trigger the workflow manually and select 'approve-plan'
-            
-            To reject and cancel the deployment:
-            - Trigger the workflow manually and select 'reject-plan'
+          issue-title: "Approve Terraform Apply for ${{ github.ref }}"
+          issue-body: "Please review and approve the Terraform plan before applying."
 
-      # Download and apply the plan if we're in approve-plan mode
-      - name: Download plan file
-        if: ${{ env.ACTION == 'approve-plan' }}
+  apply:
+    needs: [plan, wait-for-approval]
+    runs-on: ubuntu-latest
+    if: ${{ needs.wait-for-approval.outputs.approval-status == 'approved' }}
+    
+    env:
+      TARGET_ENV: ${{ github.event.inputs.TARGET_ENV || 'primary' }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download Terraform Plan
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan
-          path: terraform-plans
 
-      - name: Apply Approved Plan
-        if: ${{ env.ACTION == 'approve-plan' }}
+      - name: Initialize Terraform
         run: |
-          echo "Applying previously generated plan"
-          ./tf.sh -e ${{ env.TARGET_ENV }} -a apply -i terraform-plans/${{ env.TERRAFORM_PLAN_FILE }} --skip-interactive on --code-pipeline on
+          ./tf.sh -e ${{ env.TARGET_ENV }} -a init -v true --code-pipeline on
         env:
           TERM: xterm
 
-      # Cancel workflow if plan is rejected
-      - name: Cancel Workflow
-        if: ${{ env.ACTION == 'reject-plan' }}
+      - name: Run Terraform Apply
         run: |
-          echo "Terraform plan has been rejected. Workflow is being canceled."
-          echo "## Plan Rejected" >> $GITHUB_STEP_SUMMARY
-          echo "The Terraform plan has been rejected and will not be applied." >> $GITHUB_STEP_SUMMARY
-          exit 1
-
-      # Upload all artifacts at the end
-      - name: Upload artifacts
-        if: ${{ env.ACTION != 'reject-plan' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          path: ./**/*
+          ./tf.sh -e ${{ env.TARGET_ENV }} -a apply --skip-interactive on --code-pipeline on
+        env:
+          TERM: xterm
