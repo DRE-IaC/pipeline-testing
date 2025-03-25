@@ -2,8 +2,7 @@ name: Infrastructure Control Plane CI/CD
 
 on:
   push:
-    branches: 
-      - master
+    branches: master
 
 env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
@@ -12,131 +11,72 @@ env:
   AWS_ROLE_ARN: arn:aws:iam::344565808703:role/controlplane
 
 permissions:
-  id-token: write
-  contents: read
-  actions: write
-  issues: write
-  pull-requests: write
+  id-token: write   # Required for OIDC
+  contents: read    # Required to checkout the repository
 
 jobs:
   plan:
+    name: Terraform Plan
     runs-on: ubuntu-latest
-    
+    outputs:
+      plan-status: ${{ steps.plan.outcome }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Simulate Terraform Plan
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run Terraform Plan
+        id: plan
         run: |
-          echo "Simulating Terraform Plan"
-          mkdir -p plan_output
-          echo "Dummy plan content" > plan_output/terraform.tfplan
-          exit 0  # Ensure this step always passes
+          ./tf.sh -e primary -a plan --code-pipeline on
 
-      - name: Upload plan artifacts
+      - name: Upload plan artifact
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
-          path: plan_output/terraform.tfplan
+          path: plan.out  # Replace with actual plan output file
 
-  wait-for-approval:
+  manual-approval:
+    name: Manual Approval
     needs: plan
     runs-on: ubuntu-latest
     steps:
-      - name: Create GitHub Issue for Approval
-        uses: actions/github-script@v7
+      - name: Wait for Manual Approval
+        uses: hmarr/auto-approve-action@v3
         with:
-          github-token: ${{secrets.GITHUB_TOKEN}}
-          script: |
-            const issue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: 'Manual Approval Required for Infrastructure Deployment',
-              body: `## Infrastructure Deployment Approval Needed
-
-              A new infrastructure deployment requires manual approval.
-
-              ### Workflow Details:
-              - Workflow Run: ${context.runId}
-              - Branch: ${context.ref}
-              - Commit: ${context.sha}
-
-              ### Instructions:
-              - To APPROVE this deployment, add a comment with the word "approved"
-              - To REJECT this deployment, add a comment with the word "rejected"
-
-              Please review the plan carefully before making a decision.`
-            })
-
-            // Create a pending status check
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: context.sha,
-              state: 'pending',
-              description: 'Waiting for manual approval',
-              context: 'manual-approval'
-            })
-
-            // Output the issue number for potential reference
-            core.setOutput('issue-number', issue.data.number)
-
-      - name: Wait for Approval
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{secrets.GITHUB_TOKEN}}
-          script: |
-            const { owner, repo } = context.repo
-            const issueNumber = ${{ steps.create-issue.outputs.issue-number }}
-            
-            // Wait for comments on the issue
-            const { data: comments } = await github.rest.issues.listComments({
-              owner,
-              repo,
-              issue_number: issueNumber
-            })
-
-            // Check for approval
-            const approvalComment = comments.find(comment => 
-              comment.body.toLowerCase().includes('approved')
-            )
-
-            if (approvalComment) {
-              // Set commit status to success
-              await github.rest.repos.createCommitStatus({
-                owner,
-                repo,
-                sha: context.sha,
-                state: 'success',
-                description: 'Deployment approved',
-                context: 'manual-approval'
-              })
-              core.setOutput('approval-status', 'approved')
-            } else {
-              // Set commit status to failure
-              await github.rest.repos.createCommitStatus({
-                owner,
-                repo,
-                sha: context.sha,
-                state: 'failure',
-                description: 'Deployment not approved',
-                context: 'manual-approval'
-              })
-              core.setOutput('approval-status', 'rejected')
-              core.setFailed('Deployment not approved')
-            }
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          required-reviewers: "your-username" # Replace with actual GitHub username
 
   apply:
-    needs: [plan, wait-for-approval]
-    if: needs.wait-for-approval.outputs.approval-status == 'approved'
+    name: Terraform Apply
+    needs: manual-approval
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Print Deployment Message
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: .
+
+      - name: Run Terraform Apply
         run: |
-          echo "🚀 Deployment Approved!"
-          echo "Initiating infrastructure deployment..."
-          echo "Checking pre-deployment conditions..."
-          echo "Validating configuration settings..."
-          echo "Preparing resources for deployment..."
-          echo "Infrastructure deployment completed successfully! 🎉"
+          ./tf.sh -e primary -a apply --code-pipeline on
