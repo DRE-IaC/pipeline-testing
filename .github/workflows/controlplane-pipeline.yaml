@@ -6,9 +6,9 @@ on:
 
 env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
-  REPOSITORY_NAME: pipeline-testing
+  REPOSITORY_NAME: infrastructure-controlplane-2
   AWS_REGION: us-east-2
-  AWS_ROLE_ARN: arn:aws:iam::344565808703:role/controlplane
+  AWS_ROLE_ARN: arn:aws:iam::565393059711:role/terraform-pipeline-actions
 
 permissions:
   id-token: write   # Required for OIDC
@@ -39,20 +39,22 @@ jobs:
           name: terraform-plan
           path: plan.out  # Replace with actual plan output file
 
-  manual-approval:
+  approval:
     name: Manual Approval
     needs: plan
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for Manual Approval
-        uses: hmarr/auto-approve-action@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          required-reviewers: "shravanrau" # Replace with actual GitHub username
+      - name: Request Approval
+        run: echo "Please approve in Actions UI"
+      
+    # This makes GitHub wait for a manual trigger before continuing
+    environment:
+      name: production
+      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   apply:
     name: Terraform Apply
-    needs: manual-approval
+    needs: approval
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
