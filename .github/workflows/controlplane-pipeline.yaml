@@ -43,15 +43,14 @@ jobs:
     name: Manual Approval
     needs: plan
     runs-on: ubuntu-latest
-    steps:
-      - name: Request Approval
-        run: echo "Please approve in Actions UI"
-      
-    # This makes GitHub wait for a manual trigger before continuing
     environment:
-      name: production
+      name: production  # This must match your GitHub Environment
       url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
+    steps:
+      - name: Request Approval
+        run: echo "Waiting for approval in GitHub UI"
+      
   apply:
     name: Terraform Apply
     needs: approval
