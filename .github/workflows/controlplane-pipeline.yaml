@@ -8,7 +8,7 @@ env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
   REPOSITORY_NAME: infrastructure-controlplane-2
   AWS_REGION: us-east-2
-  AWS_ROLE_ARN: arn:aws:iam::565393059711:role/terraform-pipeline-actions
+  AWS_ROLE_ARN: arn:aws:iam::344565808703:role/controlplane
 
 permissions:
   id-token: write   # Required for OIDC
