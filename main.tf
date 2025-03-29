@@ -5,8 +5,12 @@
  */
 
 provider "aws" {
-  region = var.region
-  # Removed profile and assume_role as GitHub Actions already has the credentials
+  region  = var.region
+  profile = var.profile
+
+  assume_role {
+    role_arn = var.assume_role_arn
+  }
 }
 
 provider "kubernetes" {
@@ -16,7 +20,7 @@ provider "kubernetes" {
     api_version = "client.authentication.k8s.io/v1"
     command     = "aws"
     args        = [
-      "eks", "get-token", "--cluster-name",
+      "eks", "get-token", "--profile", var.profile, "--cluster-name",
       data.aws_eks_cluster.main.name, "--region", var.region
     ]
   }
@@ -30,8 +34,8 @@ provider "helm" {
       api_version = "client.authentication.k8s.io/v1"
       command     = "aws"
       args        = [
-        "eks", "get-token", "--cluster-name",
-        data.aws_eks_cluster.main.name, "--region", var.region
+      "eks", "get-token", "--profile", var.profile, "--cluster-name",
+      data.aws_eks_cluster.main.name, "--region", var.region
       ]
     }
   }
@@ -42,13 +46,12 @@ provider "helm" {
 # to apply a manifest. Since the cluster does not exist yet, you cannot
 # have API access. This plugin required v1beta1 api version.
 provider "kubectl" {
-  # Configuration options
   host                   = module.dre_crossplane_primary_1.cluster_endpoint
   cluster_ca_certificate = base64decode(module.dre_crossplane_primary_1.cluster_certificate_authority_data)
   exec {
     command     = "aws"
     args        = [
-      "eks", "get-token", "--cluster-name",
+      "eks", "get-token", "--profile", var.profile, "--cluster-name",
       data.aws_eks_cluster.main.name, "--region", var.region
     ]
     api_version = "client.authentication.k8s.io/v1beta1"
