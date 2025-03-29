@@ -69,7 +69,7 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: test
 
-      - name: Update tag in values.yaml
+      - name: Update tag in values.yaml and loc file
         env:
           NEW_TAG: ${{ steps.new_tag.outputs.NEW_TAG }}
         run: |
@@ -77,23 +77,15 @@ jobs:
           CURRENT_REPO=$(basename "${{ github.repository }}")
           echo "Current repository: $CURRENT_REPO"
           
-          # Set the path for the values.yaml file
+          # Update values.yaml
           TARGET_DIR="test/environments/default/$CURRENT_REPO"
           VALUES_PATH="$TARGET_DIR/values.yaml"
-          
-          # Create the directory structure if it doesn't exist
-          echo "Creating directory: $TARGET_DIR"
           mkdir -p "$TARGET_DIR"
           
-          # Check if the values.yaml file exists
           if [ ! -f "$VALUES_PATH" ]; then
-            # Create a new values.yaml file with the tag
-            echo "Creating new values.yaml file with tag: $NEW_TAG"
             echo "image:" > "$VALUES_PATH"
             echo "  tag: $NEW_TAG" >> "$VALUES_PATH"
           else
-            # Update existing values.yaml file
-            echo "Updating existing values.yaml file with tag: $NEW_TAG"
             if grep -q "tag:" "$VALUES_PATH"; then
               sed -i "s/tag: .*/tag: $NEW_TAG/" "$VALUES_PATH"
             else
@@ -101,9 +93,26 @@ jobs:
             fi
           fi
           
-          # Verify the file was created/updated
-          echo "Contents of values.yaml:"
-          cat "$VALUES_PATH"
+          # Update loc file
+          LOC_DIR="test/loc"
+          LOC_PATH="$LOC_DIR/$CURRENT_REPO.yaml"
+          mkdir -p "$LOC_DIR"
+          
+          if [ ! -f "$LOC_PATH" ]; then
+            cat > "$LOC_PATH" << EOF
+metadata:
+  annotations:
+    name: $CURRENT_REPO
+    namespace: kube-system
+    project: kube-system
+    plugin: helmfile
+    repository: git@github.com:${{ github.repository_owner }}/$CURRENT_REPO.git
+    revision: $NEW_TAG
+    enabled: 'False'
+EOF
+          else
+            sed -i "s/revision: .*/revision: $NEW_TAG/" "$LOC_PATH"
+          fi
 
       - name: Commit and push changes to test
         working-directory: test
@@ -114,18 +123,13 @@ jobs:
           git config user.name '${{ github.actor }}'
           git config user.email '${{ github.actor }}@users.noreply.github.com'
           
-          # Get the current repository name
           CURRENT_REPO=$(basename "${{ github.repository }}")
           
-          # Check if there are changes to commit
-          if git status --porcelain | grep -q "environments/default/$CURRENT_REPO"; then
-            git add "environments/default/$CURRENT_REPO/values.yaml"
-            git commit -m "Update tag for $CURRENT_REPO to $NEW_TAG"
-            git push origin HEAD:main
-            echo "Changes committed and pushed successfully"
-          else
-            echo "No changes to commit"
-          fi
+          git add "environments/default/$CURRENT_REPO/values.yaml"
+          git add "loc/$CURRENT_REPO.yaml"
+          git commit -m "Update tag for $CURRENT_REPO to $NEW_TAG"
+          git push origin HEAD:main
+          echo "Changes committed and pushed successfully"
 
       - name: Check job status
         if: always()
