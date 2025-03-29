@@ -1,9 +1,5 @@
 name: Infrastructure Control Plane CI/CD
 
-on:
-  push:
-    branches: master
-
 env:
   GITHUB_BASE_URL: https://github.com/DRE-IaC/
   REPOSITORY_NAME: infrastructure-controlplane-2
@@ -13,14 +9,13 @@ env:
 permissions:
   id-token: write   # Required for OIDC
   contents: read    # Required to checkout the repository
+  actions: write   # Added to manage workflow actions
 
 jobs:
   plan:
     name: Terraform Plan
     runs-on: ubuntu-latest
-    outputs:
-      plan-status: ${{ steps.plan.outcome }}
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -33,28 +28,72 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Upload plan artifact
+      - name: Show caller identity
+        run: aws sts get-caller-identity
+      
+      - name: Install dependencies
+        run: |
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          DESIRED_VERSION=v3.9.3 ./get_helm.sh
+          helm plugin install https://github.com/databus23/helm-diff
+          pip install --upgrade pip
+          sudo apt update
+          sudo apt-get install -y gnupg software-properties-common
+          wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+          sudo apt-add-repository ppa:ansible/ansible
+          sudo apt update
+          sudo apt install -y terraform git pax ansible
+          pip3 install awscli
+          terraform version
+          echo "Updates and installs are done"
+
+      - name: Set terminal environment
+        run: |
+          echo "TERM=xterm" >> $GITHUB_ENV
+
+      - name: Initialize Terraform
+        run: |
+          ./tf.sh -e primary -a init -v true --code-pipeline on
+        env:
+          TERM: xterm
+      
+      - name: Configure and verify EKS access
+        run: |
+          aws eks update-kubeconfig --name use2-iac-controlplane --region ${{ env.AWS_REGION }}
+          kubectl get nodes
+          echo "Successfully connected to EKS cluster."
+
+      - name: Run Terraform Plan
+        run: |
+          ./tf.sh -e primary -a plan --code-pipeline on
+        env:
+          TERM: xterm
+
+      - name: Upload plan artifacts
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
-          path: plan.out  # Replace with actual plan output file
+          path: ./**/*
 
   approval:
     name: Manual Approval
     needs: plan
     runs-on: ubuntu-latest
-    environment:
-      name: production  # This must match your GitHub Environment
-      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    environment: 
+      name: production
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
     steps:
-      - name: Request Approval
-        run: echo "Waiting for approval in GitHub UI"
-      
+      - name: Approval Waiting Message
+        run: echo "Waiting for manual approval in GitHub UI"
+
   apply:
     name: Terraform Apply
-    needs: approval
+    needs: [plan, approval]
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -67,12 +106,34 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Download plan artifact
+      - name: Download plan artifacts
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan
-          path: .
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y terraform
+
+      - name: Set terminal environment
+        run: |
+          echo "TERM=xterm" >> $GITHUB_ENV
+
+      - name: Initialize Terraform
+        run: |
+          ./tf.sh -e primary -a init -v true --code-pipeline on
+        env:
+          TERM: xterm
 
       - name: Run Terraform Apply
         run: |
-          ./tf.sh -e primary -a apply --code-pipeline on
+          ./tf.sh -e primary -a apply --skip-interactive on --code-pipeline on
+        env:
+          TERM: xterm
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apply-artifacts
+          path: ./**/*

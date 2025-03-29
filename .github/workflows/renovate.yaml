@@ -1,0 +1,120 @@
+# create-tag.yaml
+# Creates a new git tag. Always increment patch version only.
+# Also updates the tag in eks-platform-percipio repository
+---
+name: Create tag
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get token
+        id: app_token
+        continue-on-error: false
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.AUTOMATOR_APP_ID }}
+          private-key: ${{ secrets.AUTOMATOR_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app_token.outputs.token }}
+
+      - name: Set up Git
+        run: |
+          git config user.name '${{ github.actor }}'
+          git config user.email '${{ github.actor }}@users.noreply.github.com'
+
+      - name: Get latest tag
+        id: get_latest_tag
+        run: |
+          git fetch --tags
+          latest_tag=$(git tag --sort=-creatordate | head -n 1)
+          echo "Latest tag: $latest_tag"
+          echo "LATEST_TAG=$latest_tag" >> $GITHUB_OUTPUT
+
+      - name: Determine new tag version
+        id: new_tag
+        run: |
+          latest_tag="${{ steps.get_latest_tag.outputs.latest_tag }}"
+          if [ -z "$latest_tag" ]; then
+            new_tag="v0.0.1"
+          else
+            # Increment the patch version
+            IFS='.' read -r major minor patch <<< "${latest_tag#v}"
+            new_patch=$((patch + 1))
+            new_tag="v$major.$minor.$new_patch"
+          fi
+          echo "NEW_TAG=$new_tag" >> $GITHUB_OUTPUT
+
+      - name: Create and push new tag
+        env:
+          GITHUB_TOKEN: ${{ steps.app_token.outputs.token }}
+        run: |
+          new_tag="${{ steps.new_tag.outputs.new_tag }}"
+          git tag "$new_tag" -m "Release $new_tag"
+          git push origin "$new_tag"
+
+      - name: Checkout eks-platform-percipio repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/eks-platform-percipio
+          token: ${{ steps.app_token.outputs.token }}
+          path: eks-platform-percipio
+
+      - name: Update tag in values.yaml
+        env:
+          NEW_TAG: ${{ steps.new_tag.outputs.NEW_TAG }}
+        run: |
+          # Get the current repository name
+          CURRENT_REPO=$(basename "${{ github.repository }}")
+          
+          # Set the path for the values.yaml file
+          VALUES_PATH="eks-platform-percipio/environments/default/$CURRENT_REPO/values.yaml"
+          
+          # Create the directory structure if it doesn't exist
+          mkdir -p "$(dirname "$VALUES_PATH")"
+          
+          # Check if the values.yaml file exists
+          if [ ! -f "$VALUES_PATH" ]; then
+            # Create a new values.yaml file with the tag
+            echo "image:" > "$VALUES_PATH"
+            echo "  tag: $NEW_TAG" >> "$VALUES_PATH"
+          else
+            # Update existing values.yaml file
+            # Use sed to replace or add the tag
+            if grep -q "tag:" "$VALUES_PATH"; then
+              sed -i "s/tag: .*/tag: $NEW_TAG/" "$VALUES_PATH"
+            else
+              echo "tag: $NEW_TAG" >> "$VALUES_PATH"
+            fi
+          fi
+
+      - name: Commit and push changes to eks-platform-percipio
+        working-directory: eks-platform-percipio
+        env:
+          GITHUB_TOKEN: ${{ steps.app_token.outputs.token }}
+          NEW_TAG: ${{ steps.new_tag.outputs.NEW_TAG }}
+          CURRENT_REPO: ${{ github.repository }}
+        run: |
+          git config user.name '${{ github.actor }}'
+          git config user.email '${{ github.actor }}@users.noreply.github.com'
+          
+          git add "environments/default/$(basename "$CURRENT_REPO")/values.yaml"
+          git commit -m "Update tag for $(basename "$CURRENT_REPO") to $NEW_TAG"
+          git push origin HEAD:main
+
+      - name: Check job status
+        if: always()
+        run: |
+          if [ '${{ job.status }}' != 'success' ]; then
+            echo 'Job failed or had warnings'
+            exit 1
+          fi
