@@ -1,6 +1,6 @@
 # create-tag.yaml
 # Creates a new git tag. Always increment patch version only.
-# Also updates the tag in test repository
+# Also updates the tag in eks-platform-percipio repository
 ---
 name: Create tag
 on:
@@ -62,12 +62,12 @@ jobs:
           git tag "$new_tag" -m "Release $new_tag"
           git push origin "$new_tag"
 
-      - name: Checkout test repository
+      - name: Checkout eks-platform-percipio repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository_owner }}/test
+          repository: ${{ github.repository_owner }}/eks-platform-percipio
           token: ${{ steps.app_token.outputs.token }}
-          path: test
+          path: eks-platform-percipio
 
       - name: Update tag in values.yaml
         env:
@@ -75,41 +75,57 @@ jobs:
         run: |
           # Get the current repository name
           CURRENT_REPO=$(basename "${{ github.repository }}")
+          echo "Current repository: $CURRENT_REPO"
           
           # Set the path for the values.yaml file
-          VALUES_PATH="test/environments/default/$CURRENT_REPO/values.yaml"
+          TARGET_DIR="eks-platform-percipio/environments/default/$CURRENT_REPO"
+          VALUES_PATH="$TARGET_DIR/values.yaml"
           
           # Create the directory structure if it doesn't exist
-          mkdir -p "$(dirname "$VALUES_PATH")"
+          echo "Creating directory: $TARGET_DIR"
+          mkdir -p "$TARGET_DIR"
           
           # Check if the values.yaml file exists
           if [ ! -f "$VALUES_PATH" ]; then
             # Create a new values.yaml file with the tag
+            echo "Creating new values.yaml file with tag: $NEW_TAG"
             echo "image:" > "$VALUES_PATH"
             echo "  tag: $NEW_TAG" >> "$VALUES_PATH"
           else
             # Update existing values.yaml file
-            # Use sed to replace or add the tag
+            echo "Updating existing values.yaml file with tag: $NEW_TAG"
             if grep -q "tag:" "$VALUES_PATH"; then
               sed -i "s/tag: .*/tag: $NEW_TAG/" "$VALUES_PATH"
             else
-              echo "tag: $NEW_TAG" >> "$VALUES_PATH"
+              echo "  tag: $NEW_TAG" >> "$VALUES_PATH"
             fi
           fi
+          
+          # Verify the file was created/updated
+          echo "Contents of values.yaml:"
+          cat "$VALUES_PATH"
 
-      - name: Commit and push changes to test
-        working-directory: test
+      - name: Commit and push changes to eks-platform-percipio
+        working-directory: eks-platform-percipio
         env:
           GITHUB_TOKEN: ${{ steps.app_token.outputs.token }}
           NEW_TAG: ${{ steps.new_tag.outputs.NEW_TAG }}
-          CURRENT_REPO: ${{ github.repository }}
         run: |
           git config user.name '${{ github.actor }}'
           git config user.email '${{ github.actor }}@users.noreply.github.com'
           
-          git add "environments/default/$(basename "$CURRENT_REPO")/values.yaml"
-          git commit -m "Update tag for $(basename "$CURRENT_REPO") to $NEW_TAG"
-          git push origin HEAD:main
+          # Get the current repository name
+          CURRENT_REPO=$(basename "${{ github.repository }}")
+          
+          # Check if there are changes to commit
+          if git status --porcelain | grep -q "environments/default/$CURRENT_REPO"; then
+            git add "environments/default/$CURRENT_REPO/values.yaml"
+            git commit -m "Update tag for $CURRENT_REPO to $NEW_TAG"
+            git push origin HEAD:main
+            echo "Changes committed and pushed successfully"
+          else
+            echo "No changes to commit"
+          fi
 
       - name: Check job status
         if: always()
