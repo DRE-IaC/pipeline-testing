@@ -109,7 +109,7 @@ jobs:
                 repository: git@github.com:${{ github.repository_owner }}/$CURRENT_REPO.git
                 revision: $NEW_TAG
                 enabled: 'False'
-            EOF
+          EOF
           else
             sed -i "s/revision: .*/revision: $NEW_TAG/" "$LOC_PATH"
           fi
