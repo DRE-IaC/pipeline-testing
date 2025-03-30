@@ -128,7 +128,7 @@ jobs:
           git add "environments/default/$CURRENT_REPO/values.yaml"
           git add "loc/$CURRENT_REPO.yaml"
           git commit -m "Update tag for $CURRENT_REPO to $NEW_TAG"
-          git push origin HEAD:main
+          git push origin HEAD:master
           echo "Changes committed and pushed successfully"
 
       - name: Check job status
