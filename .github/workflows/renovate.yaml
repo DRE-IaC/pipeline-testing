@@ -100,7 +100,7 @@ jobs:
           
           if [ ! -f "$LOC_PATH" ]; then
             # Create LOC file with correct content
-            cat <<EOT > "$LOC_PATH"
+            cat > "$LOC_PATH" << 'EOT'
 metadata:
   annotations:
     name: $CURRENT_REPO
@@ -110,7 +110,11 @@ metadata:
     repository: git@github.com:${{ github.repository_owner }}/$CURRENT_REPO.git
     revision: $NEW_TAG
     enabled: 'False'
-          EOT
+EOT
+            # Replace variables after creating the file (since we escaped them with quotes)
+            sed -i "s/\$CURRENT_REPO/$CURRENT_REPO/g" "$LOC_PATH"
+            sed -i "s/\$NEW_TAG/$NEW_TAG/g" "$LOC_PATH"
+            sed -i "s/\${{ github.repository_owner }}/${{ github.repository_owner }}/g" "$LOC_PATH"
           else
             sed -i "s/revision: .*/revision: $NEW_TAG/" "$LOC_PATH"
           fi
