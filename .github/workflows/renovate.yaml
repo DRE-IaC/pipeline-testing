@@ -99,22 +99,17 @@ jobs:
           mkdir -p "$LOC_DIR"
           
           if [ ! -f "$LOC_PATH" ]; then
-            # Make sure the heredoc is properly closed with the same delimiter
-            cat > "$LOC_PATH" << 'ENDOFFILE'
-metadata:
-  annotations:
-    name: $CURRENT_REPO
-    namespace: kube-system
-    project: kube-system
-    plugin: helmfile
-    repository: git@github.com:${{ github.repository_owner }}/$CURRENT_REPO.git
-    revision: $NEW_TAG
-    enabled: 'False'
-ENDOFFILE
-            # Fix the variable substitution since we used quoted heredoc
-            sed -i "s/\$CURRENT_REPO/$CURRENT_REPO/g" "$LOC_PATH"
-            sed -i "s/\$NEW_TAG/$NEW_TAG/g" "$LOC_PATH"
-            sed -i "s/\${{ github.repository_owner }}/${{ github.repository_owner }}/g" "$LOC_PATH"
+            cat > "$LOC_PATH" << EOF
+            metadata:
+              annotations:
+                name: $CURRENT_REPO
+                namespace: kube-system
+                project: kube-system
+                plugin: helmfile
+                repository: git@github.com:${{ github.repository_owner }}/$CURRENT_REPO.git
+                revision: $NEW_TAG
+                enabled: 'False'
+            EOF
           else
             sed -i "s/revision: .*/revision: $NEW_TAG/" "$LOC_PATH"
           fi
