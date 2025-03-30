@@ -99,17 +99,18 @@ jobs:
           mkdir -p "$LOC_DIR"
           
           if [ ! -f "$LOC_PATH" ]; then
-            cat > "$LOC_PATH" << EOF
-            metadata:
-              annotations:
-                name: $CURRENT_REPO
-                namespace: kube-system
-                project: kube-system
-                plugin: helmfile
-                repository: git@github.com:${{ github.repository_owner }}/$CURRENT_REPO.git
-                revision: $NEW_TAG
-                enabled: 'False'
-          EOF
+            # Create LOC file with correct content
+            cat <<EOT > "$LOC_PATH"
+metadata:
+  annotations:
+    name: $CURRENT_REPO
+    namespace: kube-system
+    project: kube-system
+    plugin: helmfile
+    repository: git@github.com:${{ github.repository_owner }}/$CURRENT_REPO.git
+    revision: $NEW_TAG
+    enabled: 'False'
+EOT
           else
             sed -i "s/revision: .*/revision: $NEW_TAG/" "$LOC_PATH"
           fi
