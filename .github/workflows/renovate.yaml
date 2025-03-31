@@ -83,8 +83,6 @@ jobs:
           if [ ! -f "$VALUES_PATH" ]; then
             echo "Creating new values.yaml file at $VALUES_PATH"
             cat > "$VALUES_PATH" << EOF
-          image:
-            tag: $NEW_TAG
           metadata:
             annotations:
               name: $CURRENT_REPO
