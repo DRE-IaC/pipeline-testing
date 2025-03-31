@@ -82,10 +82,13 @@ jobs:
           VALUES_PATH="$TARGET_DIR/values.yaml"
           mkdir -p "$TARGET_DIR"
           
+          echo "Checking if values.yaml exists at: $VALUES_PATH"
           if [ ! -f "$VALUES_PATH" ]; then
+            echo "Creating new values.yaml file at $VALUES_PATH"
             echo "image:" > "$VALUES_PATH"
             echo "  tag: $NEW_TAG" >> "$VALUES_PATH"
           else
+            echo "Updating existing values.yaml file at $VALUES_PATH"
             if grep -q "tag:" "$VALUES_PATH"; then
               sed -i "s/tag: .*/tag: $NEW_TAG/" "$VALUES_PATH"
             else
@@ -98,21 +101,35 @@ jobs:
           LOC_PATH="$LOC_DIR/$CURRENT_REPO.yaml"
           mkdir -p "$LOC_DIR"
           
+          echo "Checking if loc file exists at: $LOC_PATH"
           if [ ! -f "$LOC_PATH" ]; then
+            echo "Creating new loc file at $LOC_PATH"
             cat > "$LOC_PATH" << EOF
-            metadata:
-              annotations:
-                name: $CURRENT_REPO
-                namespace: kube-system
-                project: kube-system
-                plugin: helmfile
-                repository: git@github.com:${{ github.repository_owner }}/$CURRENT_REPO.git
-                revision: $NEW_TAG
-                enabled: 'False'
+          metadata:
+            annotations:
+              name: $CURRENT_REPO
+              namespace: kube-system
+              project: kube-system
+              plugin: helmfile
+              repository: git@github.com:${{ github.repository_owner }}/$CURRENT_REPO.git
+              revision: $NEW_TAG
+              enabled: 'False'
           EOF
           else
+            echo "Updating existing loc file at $LOC_PATH"
             sed -i "s/revision: .*/revision: $NEW_TAG/" "$LOC_PATH"
           fi
+          
+          # List files to verify they were created/updated correctly
+          echo "Files created/updated:"
+          ls -la "$TARGET_DIR"
+          ls -la "$LOC_DIR"
+          
+          # Display file contents for verification
+          echo "Contents of values.yaml:"
+          cat "$VALUES_PATH"
+          echo "Contents of loc file:"
+          cat "$LOC_PATH"
 
       - name: Commit and push changes to test
         working-directory: test
