@@ -1,6 +1,3 @@
-# create-tag.yaml
-# Creates a new git tag. Always increment patch version only.
-# Also updates the tag in test repository
 ---
 name: Create tag
 on:
@@ -47,7 +44,6 @@ jobs:
           if [ -z "$latest_tag" ]; then
             new_tag="v0.0.1"
           else
-            # Increment the patch version
             IFS='.' read -r major minor patch <<< "${latest_tag#v}"
             new_patch=$((patch + 1))
             new_tag="v$major.$minor.$new_patch"
@@ -73,13 +69,12 @@ jobs:
         env:
           NEW_TAG: ${{ steps.new_tag.outputs.NEW_TAG }}
         run: |
-          # Get the current repository name
           CURRENT_REPO=$(basename "${{ github.repository }}")
           echo "Current repository: $CURRENT_REPO"
           
-          # Update values.yaml
           TARGET_DIR="test/environments/default/$CURRENT_REPO"
           VALUES_PATH="$TARGET_DIR/values.yaml"
+          LOC_PATH="$TARGET_DIR/loc.yaml"
           mkdir -p "$TARGET_DIR"
           
           echo "Checking if values.yaml exists at: $VALUES_PATH"
@@ -95,11 +90,6 @@ jobs:
               echo "  tag: $NEW_TAG" >> "$VALUES_PATH"
             fi
           fi
-          
-          # Update loc file
-          LOC_DIR="test/loc"
-          LOC_PATH="$LOC_DIR/$CURRENT_REPO.yaml"
-          mkdir -p "$LOC_DIR"
           
           echo "Checking if loc file exists at: $LOC_PATH"
           if [ ! -f "$LOC_PATH" ]; then
@@ -120,12 +110,9 @@ jobs:
             sed -i "s/revision: .*/revision: $NEW_TAG/" "$LOC_PATH"
           fi
           
-          # List files to verify they were created/updated correctly
           echo "Files created/updated:"
           ls -la "$TARGET_DIR"
-          ls -la "$LOC_DIR"
           
-          # Display file contents for verification
           echo "Contents of values.yaml:"
           cat "$VALUES_PATH"
           echo "Contents of loc file:"
@@ -143,7 +130,7 @@ jobs:
           CURRENT_REPO=$(basename "${{ github.repository }}")
           
           git add "environments/default/$CURRENT_REPO/values.yaml"
-          git add "loc/$CURRENT_REPO.yaml"
+          git add "environments/default/$CURRENT_REPO/loc.yaml"
           git commit -m "Update tag for $CURRENT_REPO to $NEW_TAG"
           git push origin HEAD:master
           echo "Changes committed and pushed successfully"
