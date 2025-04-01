@@ -1,6 +1,6 @@
 # create-tag.yaml
 # Creates a new git tag. Always increment patch version only.
-# Also updates the tag in test repository
+# Also updates the tag in eks-platform-percipio repository
 ---
 name: Create tag
 on:
@@ -61,12 +61,12 @@ jobs:
           git tag "$new_tag" -m "Release $new_tag"
           git push origin "$new_tag"
 
-      - name: Checkout test repository
+      - name: Checkout eks-platform-percipio repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository_owner }}/test
+          repository: ${{ github.repository_owner }}/eks-platform-percipio
           token: ${{ steps.app_token.outputs.token }}
-          path: test
+          path: eks-platform-percipio
 
       - name: Update values.yaml file
         env:
@@ -75,7 +75,8 @@ jobs:
           CURRENT_REPO=$(basename "${{ github.repository }}")
           echo "Current repository: $CURRENT_REPO"
           
-          TARGET_DIR="eks-platform-percipio/environments/default/$CURRENT_REPO"
+          cd eks-platform-percipio
+          TARGET_DIR="environments/default/$CURRENT_REPO"
           VALUES_PATH="$TARGET_DIR/values.yaml"
           mkdir -p "$TARGET_DIR"
           
@@ -105,8 +106,8 @@ jobs:
           echo "Contents of values.yaml:"
           cat "$VALUES_PATH"
 
-      - name: Commit and push changes to test
-        working-directory: test
+      - name: Commit and push changes to eks-platform-percipio
+        working-directory: eks-platform-percipio
         env:
           GITHUB_TOKEN: ${{ steps.app_token.outputs.token }}
           NEW_TAG: ${{ steps.new_tag.outputs.NEW_TAG }}
