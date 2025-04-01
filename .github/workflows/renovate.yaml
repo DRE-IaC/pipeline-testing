@@ -75,7 +75,7 @@ jobs:
           CURRENT_REPO=$(basename "${{ github.repository }}")
           echo "Current repository: $CURRENT_REPO"
           
-          TARGET_DIR="test/environments/default/$CURRENT_REPO"
+          TARGET_DIR="eks-platform-percipio/environments/default/$CURRENT_REPO"
           VALUES_PATH="$TARGET_DIR/values.yaml"
           mkdir -p "$TARGET_DIR"
           
@@ -118,7 +118,7 @@ jobs:
           
           git add "environments/default/$CURRENT_REPO/values.yaml"
           git commit -m "Update tag for $CURRENT_REPO to $NEW_TAG"
-          git push origin HEAD:master
+          git push origin HEAD:develop
           echo "Changes committed and pushed successfully"
 
       - name: Check job status
