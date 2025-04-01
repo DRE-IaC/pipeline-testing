@@ -105,7 +105,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/eks-platform-percipio
           token: ${{ steps.app-token.outputs.token }}
-          ref: main
+          ref: develop
 
       - name: Update or create values.yaml
         env:
@@ -156,7 +156,7 @@ jobs:
             
             Automated PR created by renovate-version-update workflow.
           branch: update-${{ env.CURRENT_REPO }}-${{ inputs.newTag }}-config
-          base: main
+          base: develop
           delete-branch: true
 
       - name: Display PR information
