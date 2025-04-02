@@ -3,12 +3,11 @@
 #
 # Runs Renovate Bot to update the version of the role in the environments.
 # It creates a pull request based on new git tag of the role.
-# It also updates or creates values.yaml in eks-platform-percipio for the repo.
 #
 # @scope common
 ##
 ---
-name: Update version and environments config
+name: Run renovate bot
 on:
   workflow_call:
     inputs:
@@ -26,13 +25,9 @@ on:
         description: 'The list of topics for autodiscovery'
         type: string
         required: false
-        default: '["helmfile","platform"]'
+        default: '["helmfile","platform","kustomize"]'
       includePaths:
         description: 'The list of paths to include in autodiscovery'
-        required: true
-        type: string
-      newTag:
-        description: 'The new tag that was created'
         required: true
         type: string
 concurrency: renovate
@@ -83,86 +78,6 @@ jobs:
           RENOVATE_INCLUDE_PATHS: ${{ inputs.includePaths || '' }}
         with:
           token: '${{ steps.app-token.outputs.token }}'
-
-  update-environment-config:
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-    needs: renovate
-    permissions:
-      contents: write
-      pull-requests: write
-
-    steps:
-      - name: Get current repository name
-        id: repo-name
-        run: |
-          REPO_NAME=$(echo ${{ github.repository }} | cut -d '/' -f 2)
-          echo "CURRENT_REPO=$REPO_NAME" >> $GITHUB_ENV
-          echo "Current repository: $REPO_NAME"
-
-      - name: Checkout environment repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/eks-platform-percipio
-          token: ${{ steps.app-token.outputs.token }}
-          ref: develop
-
-      - name: Update or create values.yaml
-        env:
-          NEW_TAG: ${{ inputs.newTag }}
-        run: |
-          VALUES_DIR="environments/default/${{ env.CURRENT_REPO }}"
-          VALUES_FILE="$VALUES_DIR/values.yaml"
-          
-          # Create directory if it doesn't exist
-          mkdir -p "$VALUES_DIR"
-          
-          if [ -f "$VALUES_FILE" ]; then
-            echo "values.yaml exists, updating revision to $NEW_TAG"
-            
-            # Update revision with new tag
-            if grep -q "revision:" "$VALUES_FILE"; then
-              sed -i "s|revision:.*|revision: $NEW_TAG|" "$VALUES_FILE"
-            else
-              # If revision doesn't exist but file does, add it
-              echo "  revision: $NEW_TAG" >> "$VALUES_FILE"
-            fi
-          else
-            echo "values.yaml doesn't exist, creating new file with content"
-            cat > "$VALUES_FILE" << EOF
-            metadata:
-              annotations:
-                name: ${{ env.CURRENT_REPO }}
-                namespace: kube-system
-                project: kube-system
-                plugin: helmfile
-                repository: git@github.com:${{ github.repository_owner }}/${{ env.CURRENT_REPO }}.git
-                revision: $NEW_TAG
-                enabled: 'False'
-          EOF
-          fi
-          
-          cat "$VALUES_FILE"
-
-      - name: Create Pull Request
-        id: create-pr
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          commit-message: "chore: Update ${{ env.CURRENT_REPO }} to ${{ inputs.newTag }}"
-          title: "chore: Update ${{ env.CURRENT_REPO }} to ${{ inputs.newTag }}"
-          body: |
-            This PR updates the reference to ${{ env.CURRENT_REPO }} to use tag ${{ inputs.newTag }}.
-            
-            Automated PR created by renovate-version-update workflow.
-          branch: update-${{ env.CURRENT_REPO }}-${{ inputs.newTag }}-config
-          base: develop
-          delete-branch: true
-
-      - name: Display PR information
-        if: steps.create-pr.outputs.pull-request-number
-        run: |
-          echo "Pull Request created: ${{ steps.create-pr.outputs.pull-request-url }}"
 
       - name: Check job status
         if: always()
