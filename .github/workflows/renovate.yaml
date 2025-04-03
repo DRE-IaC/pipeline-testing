@@ -1,3 +1,11 @@
+# renovate-version-update.yaml
+#
+# Runs Renovate Bot to update the version of the role in the environments.
+# It creates a pull request based on new git tag of the role.
+#
+# @scope common
+##
+---
 name: Run renovate bot
 on:
   workflow_call:
@@ -7,10 +15,25 @@ on:
         type: string
         required: false
         default: 'info'
+      autodiscover:
+        description: 'Switch to automaticly discover the repositories'
+        type: string
+        required: false
+        default: 'true'
+      autodiscoverTopics:
+        description: 'The list of topics for autodiscovery'
+        type: string
+        required: false
+        default: '["helmfile","platform","kustomize"]'
       includePaths:
-        description: 'The list of paths to include in renovation'
+        description: 'The list of paths to include in autodiscovery'
         required: true
         type: string
+      targetRepo:
+        description: 'Target repository for updates'
+        type: string
+        required: false
+        default: ''
 concurrency: renovate
 
 jobs:
@@ -41,6 +64,16 @@ jobs:
           private-key: ${{ secrets.RENOVATE_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
+      - name: Determine target repository
+        id: target-repo
+        run: |
+          if [ -n "${{ inputs.targetRepo }}" ]; then
+            echo "REPO=${{ inputs.targetRepo }}" >> $GITHUB_OUTPUT
+          else
+            # Default repository for helmfile updates
+            echo "REPO=DRE-IaC/eks-platform-percipio" >> $GITHUB_OUTPUT
+          fi
+
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@v41.0.13
         env:
@@ -54,12 +87,11 @@ jobs:
           RENOVATE_PLATFORM_COMMIT: 'true'
           # Log level for Renovate
           LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
-          # Disable autodiscovery to prevent scanning eks-platform repos
-          RENOVATE_AUTODISCOVER: 'false'
-          # Explicitly specify the percipio-bom repository
-          RENOVATE_REPOSITORIES: 'DRE-IaC/percipio-bom'
-          # Include paths from input parameter
+          RENOVATE_AUTODISCOVER: ${{ inputs.autodiscover || '' }}
+          RENOVATE_AUTODISCOVER_TOPICS: ${{ inputs.autodiscoverTopics || '' }}
           RENOVATE_INCLUDE_PATHS: ${{ inputs.includePaths || '' }}
+          # Explicitly set the repositories to update
+          RENOVATE_REPOSITORIES: ${{ steps.target-repo.outputs.REPO }}
         with:
           token: '${{ steps.app-token.outputs.token }}'
 
