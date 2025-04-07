@@ -1,104 +1,51 @@
-# renovate-version-update.yaml
+##
+# call-renovate-version-update.yaml
 #
-# Runs Renovate Bot to update the version of the role in the environments.
-# It creates a pull request based on new git tag of the role.
-#
-# @scope common
+# Calls remote workflow to create pull request with Renovate
+# to update the version of the role within the environments.
 ##
 ---
-name: Run renovate bot
+name: Call renovate version update
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
       logLevel:
         description: 'Override default log level'
-        type: string
         required: false
         default: 'info'
-      autodiscover:
-        description: 'Switch to automaticly discover the repositories'
         type: string
-        required: false
-        default: 'true'
-      autodiscoverTopics:
-        description: 'The list of topics for autodiscovery'
-        type: string
-        required: false
-        default: '["helmfile","platform","kustomize"]'
-      includePaths:
-        description: 'The list of paths to include in autodiscovery'
-        required: true
-        type: string
-      targetRepo:
-        description: 'Target repository for updates'
-        type: string
-        required: false
-        default: ''
-concurrency: renovate
+
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  renovate:
-    timeout-minutes: 60
+  application:
+    if: ${{ startsWith(github.repository, 'DRE-IaC/kustomize-') }}
+    name: Extract application name
     runs-on: ubuntu-latest
+    outputs:
+      application_name: ${{ steps.application-name.outputs.application_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract application name
+        id: application-name
+        run: |
+          REPOSITORY_NAME=$(basename $GITHUB_REPOSITORY)
+          APP_NAME=$(echo $REPOSITORY_NAME | sed -e 's/^customized-//g')
+          echo "application_name=$APP_NAME" >> $GITHUB_OUTPUT
+
+  tag:
+    if: ${{ startsWith(github.repository, 'DRE-IaC/kustomize-') }}
+    name: Call renovate bot on tag
+    needs: application
+    uses: DRE-IaC/github-workflow-common/.github/workflows/renovate-version-update.yaml@master
+    secrets: inherit
     permissions:
       contents: write
       pull-requests: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Check required secrets
-        run: |
-          if [ -z '${{ secrets.RENOVATE_APP_ID }}' ] || [ -z '${{ secrets.RENOVATE_PRIVATE_KEY }}' ]; then
-            echo 'Error: Required secrets are not set'
-            exit 1
-          fi
-
-      - name: Get token
-        id: app-token
-        continue-on-error: false
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.RENOVATE_APP_ID }}
-          private-key: ${{ secrets.RENOVATE_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
-      - name: Determine target repository
-        id: target-repo
-        run: |
-          if [ -n "${{ inputs.targetRepo }}" ]; then
-            echo "REPO=${{ inputs.targetRepo }}" >> $GITHUB_OUTPUT
-          else
-            # Default repository for helmfile updates
-            echo "REPO=DRE-IaC/eks-platform-percipio" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Self-hosted Renovate
-        uses: renovatebot/github-action@v41.0.13
-        env:
-          # Onboarding not needed for self hosted
-          RENOVATE_ONBOARDING: 'false'
-          # Username for GitHub authentication
-          RENOVATE_USERNAME: 'dre-iac-renovate[bot]'
-          # Git commit author used, must match GitHub App
-          RENOVATE_GIT_AUTHOR: 'dre-iac-renovate <1152757+dre-iac-renovate[bot]@users.noreply.github.com>'
-          # This allows for signed commits from GitHub App
-          RENOVATE_PLATFORM_COMMIT: 'true'
-          # Log level for Renovate
-          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
-          RENOVATE_AUTODISCOVER: ${{ inputs.autodiscover || '' }}
-          RENOVATE_AUTODISCOVER_TOPICS: ${{ inputs.autodiscoverTopics || '' }}
-          RENOVATE_INCLUDE_PATHS: ${{ inputs.includePaths || '' }}
-          # Explicitly set the repositories to update
-          RENOVATE_REPOSITORIES: ${{ steps.target-repo.outputs.REPO }}
-        with:
-          token: '${{ steps.app-token.outputs.token }}'
-
-      - name: Check job status
-        if: always()
-        run: |
-          if [ '${{ job.status }}' != 'success' ]; then
-            echo 'Job failed or had warnings'
-            exit 1
-          fi
+    with:
+      logLevel: ${{ inputs.logLevel || 'info' }}
+      includePaths: 'develop/dmz/${{ needs.application.outputs.application_name }}.yaml'
