@@ -1,0 +1,51 @@
+##
+# call-renovate-version-update.yaml
+#
+# Calls remote workflow to create pull request with Renovate
+# to update the version of the role within the environments.
+##
+---
+    name: Call renovate version update
+    on:
+      workflow_dispatch:
+        inputs:
+          logLevel:
+            description: 'Override default log level'
+            required: false
+            default: 'info'
+            type: string
+    
+      push:
+        tags:
+          - 'v*'
+    
+    jobs:
+      application:
+        if: ${{ startsWith(github.repository, 'DRE-IaC/helmfile-') }}
+        name: Extrtract application name
+        runs-on: ubuntu-latest
+        outputs:
+          application_name: ${{ steps.application-name.outputs.application_name }}
+        steps:
+          - name: Checkout repository
+            uses: actions/checkout@v4
+    
+          - name: Extract application name
+            id: application-name
+            run: |
+              REPOSITORY_NAME=$(basename $GITHUB_REPOSITORY)
+              APP_NAME=$(echo $REPOSITORY_NAME | sed -e 's/^helmfile-//g')
+              echo "APPLICATION_NAME=$APP_NAME" >> $GITHUB_OUTPUT
+    
+      tag:
+        if: ${{ startsWith(github.repository, 'DRE-IaC/helmfile-') }}
+        name: Call renovate bot on tag
+        needs: application
+        uses: DRE-IaC/github-workflow-common/.github/workflows/renovate-version-update.yaml@master
+        secrets: inherit
+        permissions:
+          contents: write
+          pull-requests: write
+        with:
+          logLevel: ${{ inputs.logLevel || 'info' }}
+          includePaths: 'environments/default/${{ needs.application.outputs.application_name }}/values.yaml'
