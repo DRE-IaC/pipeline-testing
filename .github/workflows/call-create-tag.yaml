@@ -1,0 +1,15 @@
+##
+# call-create-tag.yaml
+# Calls remote workflow to crete new git tag.
+##
+---
+    name: Calls worflow to create new tag
+    on:
+      push:
+        branches: [master]
+    
+    jobs:
+      call-create-tag:
+        name: Create tag
+        uses: DRE-IaC/github-workflow-common/.github/workflows/create-tag.yaml@master
+        secrets: inherit
