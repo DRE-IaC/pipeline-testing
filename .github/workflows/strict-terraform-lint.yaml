@@ -1,0 +1,15 @@
+##
+# strict-terraform-lint.yaml
+# Calls remote workflow to lint Terraform.
+##
+---
+name: Terraform Lint
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  call-common:
+    name: Strict Terraform Linter
+    uses: DRE-IaC/github-workflow-common/.github/workflows/strict-terraform-lint.yaml@master
+    secrets: inherit
